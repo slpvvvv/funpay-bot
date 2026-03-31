@@ -25,7 +25,7 @@ TON_PER_REVIEW = 0.3
 CRYPTO_WALLET_TON = "UQCRGaqAqG72vK-B869dvLrA0znKYUfcW-MK9K5765oeVlD-"
 MIN_REVIEWS = 1
 MAX_REVIEWS = 500
-MIN_OFFERS = 5
+MIN_OFFERS = 1
 MIN_OFFER_PRICE = 1
 
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
