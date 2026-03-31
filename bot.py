@@ -3,6 +3,7 @@ import sqlite3
 import logging
 import threading
 import os
+import asyncio
 from datetime import datetime
 from flask import Flask, jsonify
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, LabeledPrice
@@ -400,18 +401,12 @@ def index():
     return jsonify({"status": "Bot is running!", "time": datetime.now().isoformat()})
 
 def run_flask():
-    flask_app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 8080)))
+    flask_app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 10000)))
 
 # ========== ЗАПУСК ==========
-def main():
-    init_db()
-    
-    flask_thread = threading.Thread(target=run_flask, daemon=True)
-    flask_thread.start()
-    logger.info("Flask keep-alive запущен")
-    
+async def run_bot():
+    """Асинхронный запуск бота"""
     application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
-#    application.updater = None
     
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("admin", admin_command))
@@ -421,7 +416,26 @@ def main():
     application.add_handler(MessageHandler(filters.SUCCESSFUL_PAYMENT, successful_payment_handler))
     
     logger.info("🤖 Бот запущен!")
-    application.run_polling()
+    await application.initialize()
+    await application.start()
+    await application.updater.start_polling()
+    # Держим бота запущенным
+    while True:
+        await asyncio.sleep(3600)
+
+def main():
+    init_db()
+    
+    # Запускаем Flask в отдельном потоке
+    flask_thread = threading.Thread(target=run_flask, daemon=True)
+    flask_thread.start()
+    logger.info("Flask keep-alive запущен на порту 10000")
+    
+    # Запускаем бота в асинхронном режиме
+    try:
+        asyncio.run(run_bot())
+    except KeyboardInterrupt:
+        logger.info("Бот остановлен")
 
 if __name__ == "__main__":
     main()
