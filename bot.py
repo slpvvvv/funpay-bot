@@ -411,7 +411,7 @@ def main():
     logger.info("Flask keep-alive запущен")
     
     application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
-    application.updater = None
+#    application.updater = None
     
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("admin", admin_command))
