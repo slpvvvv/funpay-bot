@@ -903,15 +903,34 @@ async def check_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(text, parse_mode='Markdown')
 
 # ========== FLASK ДЛЯ KEEP-ALIVE ==========
+# ========== FLASK ДЛЯ KEEP-ALIVE ==========
 flask_app = Flask(__name__)
 
 @flask_app.route('/')
 def index():
-    return jsonify({"status": "Bot is running!", "time": datetime.now().isoformat()})
+    return "OK", 200
 
 def run_flask():
     flask_app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 10000)))
+# ========== АВТО-ПИНГ ==========
+import requests
+import time
 
+def start_self_ping():
+    """Запускает авто-пинг каждые 5 минут в отдельном потоке"""
+    def ping_loop():
+        url = f"http://localhost:10000/"
+        while True:
+            try:
+                response = requests.get(url, timeout=10)
+                logger.info(f"🔄 Self-ping: {response.status_code}")
+            except Exception as e:
+                logger.error(f"❌ Self-ping error: {e}")
+            time.sleep(300)  # 5 минут
+    
+    ping_thread = threading.Thread(target=ping_loop, daemon=True)
+    ping_thread.start()
+    logger.info("🚀 Self-ping запущен (каждые 5 минут)")
 # ========== ЗАПУСК ==========
 async def run_bot():
     application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
@@ -934,9 +953,13 @@ async def run_bot():
 def main():
     init_db()
     
+    # Запускаем Flask
     flask_thread = threading.Thread(target=run_flask, daemon=True)
     flask_thread.start()
     logger.info("Flask keep-alive запущен на порту 10000")
+    
+    # Запускаем авто-пинг (бот сам себя будет пинговать)
+    start_self_ping()
     
     try:
         asyncio.run(run_bot())
