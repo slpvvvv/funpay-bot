@@ -433,7 +433,92 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=get_settings_keyboard()
         )
         return
-    
+# ========== РЕДАКТИРОВАНИЕ НАСТРОЕК ==========
+if query.data == "edit_price":
+    if user_id != ADMIN_ID:
+        await query.answer("⛔ Нет доступа", show_alert=True)
+        return
+    context.user_data['edit_mode'] = 'price'
+    await query.edit_message_text(
+        f"💰 *Введите новую цену за 1 отзыв (в рублях)*\n\n"
+        f"Текущая: {PRICE_PER_REVIEW_RUB} ₽\n\n"
+        f"Пример: `50`",
+        parse_mode='Markdown',
+        reply_markup=get_back_keyboard()
+    )
+    return
+
+if query.data == "edit_stars":
+    if user_id != ADMIN_ID:
+        await query.answer("⛔ Нет доступа", show_alert=True)
+        return
+    context.user_data['edit_mode'] = 'stars'
+    await query.edit_message_text(
+        f"💎 *Введите количество Stars за 1 отзыв*\n\n"
+        f"Текущее: {STARS_PER_REVIEW} ⭐\n\n"
+        f"Пример: `35`",
+        parse_mode='Markdown',
+        reply_markup=get_back_keyboard()
+    )
+    return
+
+if query.data == "edit_ton":
+    if user_id != ADMIN_ID:
+        await query.answer("⛔ Нет доступа", show_alert=True)
+        return
+    context.user_data['edit_mode'] = 'ton'
+    await query.edit_message_text(
+        f"🪙 *Введите количество TON за 1 отзыв*\n\n"
+        f"Текущее: {TON_PER_REVIEW} TON\n\n"
+        f"Пример: `0.3`",
+        parse_mode='Markdown',
+        reply_markup=get_back_keyboard()
+    )
+    return
+
+if query.data == "edit_reviews":
+    if user_id != ADMIN_ID:
+        await query.answer("⛔ Нет доступа", show_alert=True)
+        return
+    context.user_data['edit_mode'] = 'reviews'
+    await query.edit_message_text(
+        f"📦 *Введите минимальное и максимальное количество отзывов*\n\n"
+        f"Текущее: {MIN_REVIEWS} - {MAX_REVIEWS}\n\n"
+        f"Формат: `мин макс`\n"
+        f"Пример: `1 500`",
+        parse_mode='Markdown',
+        reply_markup=get_back_keyboard()
+    )
+    return
+
+if query.data == "edit_offers":
+    if user_id != ADMIN_ID:
+        await query.answer("⛔ Нет доступа", show_alert=True)
+        return
+    context.user_data['edit_mode'] = 'offers'
+    await query.edit_message_text(
+        f"📢 *Введите условие по объявлениям*\n\n"
+        f"Текущее: {MIN_OFFERS} объявлений по {MIN_OFFER_PRICE}₽\n\n"
+        f"Формат: `количество цена`\n"
+        f"Пример: `5 1`",
+        parse_mode='Markdown',
+        reply_markup=get_back_keyboard()
+    )
+    return
+
+if query.data == "edit_wallet":
+    if user_id != ADMIN_ID:
+        await query.answer("⛔ Нет доступа", show_alert=True)
+        return
+    context.user_data['edit_mode'] = 'wallet'
+    await query.edit_message_text(
+        f"💳 *Введите новый TON кошелек*\n\n"
+        f"Текущий:\n`{CRYPTO_WALLET_TON}`\n\n"
+        f"Вставьте новый адрес кошелька:",
+        parse_mode='Markdown',
+        reply_markup=get_back_keyboard()
+    )
+    return    
     # ========== ОБРАБОТКА ЗАКАЗОВ (отклонения, возвраты) ==========
     if query.data.startswith("reject_offers_"):
         if user_id != ADMIN_ID:
