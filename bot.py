@@ -228,10 +228,10 @@ def get_payment_keyboard(order_id, amount_stars, amount_ton):
     keyboard = [
         [InlineKeyboardButton(f"💎 Telegram Stars ({amount_stars}⭐)", callback_data=f"stars_{order_id}")],
         [InlineKeyboardButton(f"🪙 TON ({amount_ton} TON)", callback_data=f"crypto_{order_id}")],
-        [InlineKeyboardButton(f"🎮 Оплатить через [ЛОТ]({FUNPAY_LOT_URL})", callback_data=f"funpay_{order_id}", url=FUNPAY_LOT_URL)],
+        [InlineKeyboardButton("🎮 Оплатить через ЛОТ", callback_data=f"funpay_{order_id}", url=FUNPAY_LOT_URL)],
         [InlineKeyboardButton("◀️ НАЗАД", callback_data="back_to_main")]
     ]
-    return InlineKeyboardMarkup(keyboard, parse_mode='Markdown')
+    return InlineKeyboardMarkup(keyboard)
 
 def get_admin_keyboard():
     keyboard = [
