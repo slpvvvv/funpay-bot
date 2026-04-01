@@ -387,6 +387,59 @@ async def successful_payment_handler(update: Update, context: ContextTypes.DEFAU
         ])
     )
 
+async def check_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Команда /check ID - проверка заказа (только админ)"""
+    user_id = update.effective_user.id
+    
+    if user_id != ADMIN_ID:
+        await update.message.reply_text("⛔ Нет доступа")
+        return
+    
+    args = context.args
+    if not args:
+        await update.message.reply_text(
+            "📝 *Использование:* `/check ORDER_ID`\n\n"
+            "Пример: `/check a1b2c3d4`",
+            parse_mode='Markdown'
+        )
+        return
+    
+    order_id = args[0]
+    order = get_order(order_id)
+    
+    if not order:
+        await update.message.reply_text(f"❌ Заказ `{order_id}` не найден", parse_mode='Markdown')
+        return
+    
+    # Статусы
+    status_text = {
+        'pending': '⏳ Ожидает оплаты',
+        'paid': '✅ Оплачен, в работе',
+        'completed': '🎉 Выполнен',
+        'cancelled': '❌ Отменен'
+    }.get(order['status'], '❓ Неизвестно')
+    
+    text = (
+        f"📋 *Детали заказа*\n\n"
+        f"🆔 ID: `{order_id}`\n"
+        f"👤 Пользователь: @{order['username']}\n"
+        f"🆔 User ID: `{order['user_id']}`\n"
+        f"📦 Отзывы: {order['reviews_count']}\n"
+        f"🔗 Ссылка: {order['funpay_link']}\n"
+        f"💰 Сумма: {order['amount_rub']} ₽\n"
+        f"💎 Stars: {order['amount_stars']} ⭐\n"
+        f"🪙 TON: {order['amount_ton']}\n"
+        f"📊 Статус: {status_text}\n"
+        f"📅 Создан: {order['created_at'][:19]}\n"
+    )
+    
+    if order['paid_at']:
+        text += f"✅ Оплачен: {order['paid_at'][:19]}\n"
+    if order['completed_at']:
+        text += f"🎉 Выполнен: {order['completed_at'][:19]}"
+    
+    await update.message.reply_text(text, parse_mode='Markdown')
+
 async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         await update.message.reply_text("⛔ Нет доступа")
@@ -410,6 +463,7 @@ async def run_bot():
     
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("admin", admin_command))
+    application.add_handler(CommandHandler("check", check_command))
     application.add_handler(CallbackQueryHandler(button_handler))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     application.add_handler(PreCheckoutQueryHandler(pre_checkout_handler))
