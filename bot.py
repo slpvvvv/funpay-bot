@@ -19,7 +19,7 @@ from telegram.ext import (
 TELEGRAM_BOT_TOKEN = "8668091678:AAHYsrKBDYfekWfP1x-gLPD6pwAAvBLzrGA"
 ADMIN_ID = 6480073415
 SUPPORT_CONTACT = "@gortonn"
-REVIEWS_CHANNEL = "https://t.me/+RB3PaVVUH5U2OTE5"
+REVIEWS_CHANNEL = "https://t.me/+GtFmXCZuPE00NDIx"
 FUNPAY_LOT_URL = "https://funpay.com/lots/offer?id=66845478"
 SETTINGS_FILE = "settings.json"
 
@@ -216,7 +216,7 @@ def get_main_keyboard():
     keyboard = [
         [InlineKeyboardButton("🌟 ЗАКАЗАТЬ ОТЗЫВЫ", callback_data="order")],
         [InlineKeyboardButton("📦 МОИ ЗАКАЗЫ", callback_data="my_orders")],
-        [InlineKeyboardButton("⭐ ОТЗЫВЫ О НАС", callback_data="reviews")],
+        [InlineKeyboardButton("✨ ОТЗЫВЫ О НАС", callback_data="reviews")],
         [InlineKeyboardButton("❓ ПОМОЩЬ", callback_data="help")]
     ]
     return InlineKeyboardMarkup(keyboard)
@@ -226,9 +226,9 @@ def get_back_keyboard():
 
 def get_payment_keyboard(order_id, amount_stars, amount_ton):
     keyboard = [
-        [InlineKeyboardButton(f"💎 Telegram Stars ({amount_stars}⭐)", callback_data=f"stars_{order_id}")],
+        [InlineKeyboardButton(f"⭐ Telegram Stars ({amount_stars}⭐)", callback_data=f"stars_{order_id}")],
         [InlineKeyboardButton(f"🪙 TON ({amount_ton} TON)", callback_data=f"crypto_{order_id}")],
-        [InlineKeyboardButton("🎮 Оплатить через ЛОТ", callback_data=f"funpay_{order_id}", url=FUNPAY_LOT_URL)],
+        [InlineKeyboardButton("🎮 Оплатить через FanPay", callback_data=f"funpay_{order_id}", url=FUNPAY_LOT_URL)],
         [InlineKeyboardButton("◀️ НАЗАД", callback_data="back_to_main")]
     ]
     return InlineKeyboardMarkup(keyboard)
@@ -250,7 +250,7 @@ def get_admin_keyboard():
 def get_settings_keyboard():
     keyboard = [
         [InlineKeyboardButton(f"💰 Цена: {PRICE_PER_REVIEW_RUB}₽", callback_data="edit_price")],
-        [InlineKeyboardButton(f"💎 Stars: {STARS_PER_REVIEW}⭐", callback_data="edit_stars")],
+        [InlineKeyboardButton(f"⭐ Stars: {STARS_PER_REVIEW}⭐", callback_data="edit_stars")],
         [InlineKeyboardButton(f"🪙 TON: {TON_PER_REVIEW}", callback_data="edit_ton")],
         [InlineKeyboardButton(f"📦 Отзывы: {MIN_REVIEWS}-{MAX_REVIEWS}", callback_data="edit_reviews")],
         [InlineKeyboardButton(f"📢 Условие: {MIN_OFFERS}×{MIN_OFFER_PRICE}₽", callback_data="edit_offers")],
@@ -264,7 +264,7 @@ def format_settings_text():
     return (
         f"🔧 *НАСТРОЙКИ СЕРВИСА*\n\n"
         f"💰 Цена за отзыв: *{PRICE_PER_REVIEW_RUB} ₽*\n"
-        f"💎 Telegram Stars: *{STARS_PER_REVIEW} ⭐*\n"
+        f"⭐ Telegram Stars: *{STARS_PER_REVIEW} ⭐*\n"
         f"🪙 TON: *{TON_PER_REVIEW} TON*\n\n"
         f"📦 Диапазон: *{MIN_REVIEWS}* — *{MAX_REVIEWS}* отзывов\n"
         f"📢 Условие: *{MIN_OFFERS}* объявлений по *{MIN_OFFER_PRICE}₽*\n\n"
@@ -281,7 +281,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "✨ *ДОБРО ПОЖАЛОВАТЬ В СЕРВИС НАКРУТКИ ОТЗЫВОВ FUNPAY!* ✨\n\n"
         f"💰 *ЦЕНА:* {PRICE_PER_REVIEW_RUB}₽ за 1 отзыв\n"
-        f"💎 *STARS:* {STARS_PER_REVIEW}⭐ за отзыв\n"
+        f"⭐ *STARS:* {STARS_PER_REVIEW}⭐ за отзыв\n"
         f"🪙 *TON:* {TON_PER_REVIEW} TON за отзыв\n\n"
         f"📋 *УСЛОВИЯ:*\n"
         f"• Минимум *{MIN_OFFERS}* объявлений на вашем профиле\n"
@@ -318,7 +318,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data['state'] = 'waiting_reviews_count'
         await query.edit_message_text(
             f"📝 *ОФОРМЛЕНИЕ ЗАКАЗА*\n\n"
-            f"Введите количество отзывов:\n"
+            f"Введите количество необходимых отзывов:\n"
             f"*Доступно:* от {MIN_REVIEWS} до {MAX_REVIEWS}\n"
             f"*Цена:* {PRICE_PER_REVIEW_RUB}₽ за отзыв\n\n"
             f"⚠️ *Важно:* на вашем профиле должно быть минимум {MIN_OFFERS} объявлений по {MIN_OFFER_PRICE}₽\n\n"
@@ -353,7 +353,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "3️⃣ Отправьте ссылку на профиль FunPay\n"
             "4️⃣ Выберите способ оплаты\n\n"
             "*СПОСОБЫ ОПЛАТЫ:*\n"
-            f"💎 Telegram Stars — автоматически\n"
+            f"⭐ Telegram Stars — автоматически\n"
             f"🪙 TON — перевод на кошелек\n"
             f"🎮 FunPay — оплата через [лот]({FUNPAY_LOT_URL})\n\n"
             f"⚠️ *ВАЖНО:* при оплате через FunPay обязательно ознакомьтесь с описанием лота!\n\n"
@@ -512,7 +512,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         context.user_data['edit_mode'] = 'stars'
         await query.edit_message_text(
-            f"💎 *ИЗМЕНЕНИЕ STARS*\n\n"
+            f"⭐ *ИЗМЕНЕНИЕ STARS*\n\n"
             f"Текущее значение: *{STARS_PER_REVIEW} ⭐*\n\n"
             f"Введите новое количество Stars за 1 отзыв:",
             parse_mode='Markdown',
@@ -965,7 +965,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await update.message.reply_text(
                     f"✅ *{reviews_count} ОТЗЫВОВ*\n\n"
                     f"💰 *Сумма:* {reviews_count * PRICE_PER_REVIEW_RUB}₽\n"
-                    f"💎 *Stars:* {reviews_count * STARS_PER_REVIEW}⭐\n"
+                    f"⭐ *Stars:* {reviews_count * STARS_PER_REVIEW}⭐\n"
                     f"🪙 *TON:* {round(reviews_count * TON_PER_REVIEW, 2)} TON\n\n"
                     f"⚠️ *Напоминание:* на вашем профиле должно быть минимум {MIN_OFFERS} объявлений по {MIN_OFFER_PRICE}₽\n\n"
                     f"🔗 *Отправьте ссылку на профиль FunPay:*\n\n"
