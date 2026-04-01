@@ -4,6 +4,7 @@ import logging
 import threading
 import os
 import asyncio
+import json
 from datetime import datetime
 from flask import Flask, jsonify
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, LabeledPrice
@@ -16,17 +17,42 @@ from telegram.ext import (
 TELEGRAM_BOT_TOKEN = "8668091678:AAHYsrKBDYfekWfP1x-gLPD6pwAAvBLzrGA"
 ADMIN_ID = 6480073415
 SUPPORT_CONTACT = "@gortonn"
+SETTINGS_FILE = "settings.json"
 
-# Цены
-PRICE_PER_REVIEW_RUB = 33
-STARS_PER_REVIEW = 35
-TON_PER_REVIEW = 0.3
+# Настройки по умолчанию
+DEFAULT_SETTINGS = {
+    "price_per_review_rub": 33,
+    "stars_per_review": 35,
+    "ton_per_review": 0.3,
+    "min_reviews": 1,
+    "max_reviews": 500,
+    "min_offers": 5,
+    "min_offer_price": 1,
+    "crypto_wallet_ton": "UQCRGaqAqG72vK-B869dvLrA0znKYUfcW-MK9K5765oeVlD-"
+}
 
-CRYPTO_WALLET_TON = "UQCRGaqAqG72vK-B869dvLrA0znKYUfcW-MK9K5765oeVlD-"
-MIN_REVIEWS = 1
-MAX_REVIEWS = 500
-MIN_OFFERS = 1
-MIN_OFFER_PRICE = 1
+# Загрузка настроек
+def load_settings():
+    if os.path.exists(SETTINGS_FILE):
+        with open(SETTINGS_FILE, 'r') as f:
+            return json.load(f)
+    return DEFAULT_SETTINGS.copy()
+
+def save_settings(settings):
+    with open(SETTINGS_FILE, 'w') as f:
+        json.dump(settings, f, indent=2)
+
+SETTINGS = load_settings()
+
+# Переменные из настроек
+PRICE_PER_REVIEW_RUB = SETTINGS["price_per_review_rub"]
+STARS_PER_REVIEW = SETTINGS["stars_per_review"]
+TON_PER_REVIEW = SETTINGS["ton_per_review"]
+MIN_REVIEWS = SETTINGS["min_reviews"]
+MAX_REVIEWS = SETTINGS["max_reviews"]
+MIN_OFFERS = SETTINGS["min_offers"]
+MIN_OFFER_PRICE = SETTINGS["min_offer_price"]
+CRYPTO_WALLET_TON = SETTINGS["crypto_wallet_ton"]
 
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -39,7 +65,7 @@ def init_db():
                  (order_id TEXT PRIMARY KEY, user_id INTEGER, username TEXT, reviews_count INTEGER,
                   funpay_link TEXT, amount_rub INTEGER, amount_stars INTEGER, amount_ton REAL,
                   payment_method TEXT, telegram_payment_charge_id TEXT, status TEXT,
-                  created_at TEXT, paid_at TEXT, completed_at TEXT)''')
+                  created_at TEXT, paid_at TEXT, completed_at TEXT, cancelled_at TEXT, cancel_reason TEXT)''')
     conn.commit()
     conn.close()
     logger.info("База данных готова")
@@ -47,9 +73,9 @@ def init_db():
 def save_order(order_id, user_id, username, reviews_count, funpay_link, amount_rub, amount_stars, amount_ton, payment_method):
     conn = sqlite3.connect('orders.db')
     c = conn.cursor()
-    c.execute('''INSERT INTO orders VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
+    c.execute('''INSERT INTO orders VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
               (order_id, user_id, username, reviews_count, funpay_link, amount_rub, amount_stars, amount_ton, 
-               payment_method, None, 'pending', datetime.now().isoformat(), None, None))
+               payment_method, None, 'pending', datetime.now().isoformat(), None, None, None, None))
     conn.commit()
     conn.close()
 
@@ -63,6 +89,14 @@ def update_order_status(order_id, status, telegram_payment_charge_id=None, paid_
         c.execute('UPDATE orders SET status=?, paid_at=? WHERE order_id=?', (status, paid_at, order_id))
     else:
         c.execute('UPDATE orders SET status=? WHERE order_id=?', (status, order_id))
+    conn.commit()
+    conn.close()
+
+def cancel_order(order_id, reason):
+    conn = sqlite3.connect('orders.db')
+    c = conn.cursor()
+    c.execute('UPDATE orders SET status=?, cancelled_at=?, cancel_reason=? WHERE order_id=?',
+              ('cancelled', datetime.now().isoformat(), reason, order_id))
     conn.commit()
     conn.close()
 
@@ -84,7 +118,7 @@ def get_order(order_id):
         return {'order_id': row[0], 'user_id': row[1], 'username': row[2], 'reviews_count': row[3],
                 'funpay_link': row[4], 'amount_rub': row[5], 'amount_stars': row[6], 'amount_ton': row[7],
                 'payment_method': row[8], 'telegram_payment_charge_id': row[9], 'status': row[10],
-                'created_at': row[11], 'paid_at': row[12], 'completed_at': row[13]}
+                'created_at': row[11], 'paid_at': row[12], 'completed_at': row[13], 'cancelled_at': row[14], 'cancel_reason': row[15]}
     return None
 
 def get_user_orders(user_id):
@@ -94,6 +128,36 @@ def get_user_orders(user_id):
     rows = c.fetchall()
     conn.close()
     return rows
+
+def get_all_orders(status=None):
+    conn = sqlite3.connect('orders.db')
+    c = conn.cursor()
+    if status:
+        c.execute('SELECT * FROM orders WHERE status=? ORDER BY created_at DESC', (status,))
+    else:
+        c.execute('SELECT * FROM orders ORDER BY created_at DESC')
+    rows = c.fetchall()
+    conn.close()
+    return rows
+
+def get_stats():
+    conn = sqlite3.connect('orders.db')
+    c = conn.cursor()
+    c.execute('SELECT COUNT(*) FROM orders')
+    total_orders = c.fetchone()[0]
+    c.execute('SELECT COUNT(*) FROM orders WHERE status="paid" OR status="completed"')
+    paid_orders = c.fetchone()[0]
+    c.execute('SELECT COUNT(*) FROM orders WHERE status="completed"')
+    completed_orders = c.fetchone()[0]
+    c.execute('SELECT COUNT(*) FROM orders WHERE status="cancelled"')
+    cancelled_orders = c.fetchone()[0]
+    c.execute('SELECT SUM(amount_rub) FROM orders WHERE status="paid" OR status="completed"')
+    total_revenue = c.fetchone()[0] or 0
+    c.execute('SELECT SUM(reviews_count) FROM orders WHERE status="paid" OR status="completed"')
+    total_reviews = c.fetchone()[0] or 0
+    conn.close()
+    return {'total_orders': total_orders, 'paid_orders': paid_orders, 'completed_orders': completed_orders,
+            'cancelled_orders': cancelled_orders, 'total_revenue': total_revenue, 'total_reviews': total_reviews}
 
 # ========== КЛАВИАТУРЫ ==========
 def get_main_keyboard():
@@ -115,16 +179,57 @@ def get_payment_keyboard(order_id, amount_stars, amount_ton):
     ]
     return InlineKeyboardMarkup(keyboard)
 
+def get_order_actions_keyboard(order_id, status):
+    keyboard = []
+    if status == 'pending':
+        keyboard.append([InlineKeyboardButton("✅ Подтвердить оплату", callback_data=f"approve_{order_id}")])
+        keyboard.append([InlineKeyboardButton("❌ Отклонить (нет 5 объявлений)", callback_data=f"reject_offers_{order_id}")])
+        keyboard.append([InlineKeyboardButton("❌ Отклонить (нет перевода)", callback_data=f"reject_payment_{order_id}")])
+    if status == 'paid':
+        keyboard.append([InlineKeyboardButton("🎉 Выполнен", callback_data=f"complete_{order_id}")])
+        keyboard.append([InlineKeyboardButton("💰 Вернуть средства", callback_data=f"refund_{order_id}")])
+    if status in ['pending', 'paid']:
+        keyboard.append([InlineKeyboardButton("🗑 Отменить заказ", callback_data=f"cancel_{order_id}"])])
+    keyboard.append([InlineKeyboardButton("🔙 Назад", callback_data="admin_panel")])
+    return InlineKeyboardMarkup(keyboard)
+
 def get_admin_keyboard():
     keyboard = [
         [InlineKeyboardButton("📋 Все заказы", callback_data="admin_all_orders")],
         [InlineKeyboardButton("⏳ Ожидают оплаты", callback_data="admin_pending")],
         [InlineKeyboardButton("✅ Оплаченные", callback_data="admin_paid")],
         [InlineKeyboardButton("🎉 Выполненные", callback_data="admin_completed")],
+        [InlineKeyboardButton("❌ Отмененные", callback_data="admin_cancelled")],
         [InlineKeyboardButton("📊 Статистика", callback_data="admin_stats")],
+        [InlineKeyboardButton("⚙️ Настройки", callback_data="admin_settings")],
         [InlineKeyboardButton("🔙 В главное меню", callback_data="back_to_main")]
     ]
     return InlineKeyboardMarkup(keyboard)
+
+def get_settings_keyboard():
+    keyboard = [
+        [InlineKeyboardButton(f"💰 Цена (₽): {PRICE_PER_REVIEW_RUB}", callback_data="edit_price")],
+        [InlineKeyboardButton(f"💎 Stars: {STARS_PER_REVIEW}⭐", callback_data="edit_stars")],
+        [InlineKeyboardButton(f"🪙 TON: {TON_PER_REVIEW}", callback_data="edit_ton")],
+        [InlineKeyboardButton(f"📦 Мин/Макс отзывов: {MIN_REVIEWS}/{MAX_REVIEWS}", callback_data="edit_reviews")],
+        [InlineKeyboardButton(f"📢 Мин объявлений: {MIN_OFFERS} по {MIN_OFFER_PRICE}₽", callback_data="edit_offers")],
+        [InlineKeyboardButton(f"💳 TON кошелек", callback_data="edit_wallet")],
+        [InlineKeyboardButton("🔙 Назад в админку", callback_data="admin_panel")],
+        [InlineKeyboardButton("🏠 В главное меню", callback_data="back_to_main")]
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
+def format_settings_text():
+    return (
+        f"⚙️ *Текущие настройки:*\n\n"
+        f"💰 Цена за отзыв: *{PRICE_PER_REVIEW_RUB} ₽*\n"
+        f"💎 Telegram Stars: *{STARS_PER_REVIEW} ⭐*\n"
+        f"🪙 TON: *{TON_PER_REVIEW} TON*\n\n"
+        f"📦 Отзывы: от *{MIN_REVIEWS}* до *{MAX_REVIEWS}*\n"
+        f"📢 Условие: *{MIN_OFFERS}* объявлений по *{MIN_OFFER_PRICE}₽*\n\n"
+        f"💳 Кошелек TON:\n`{CRYPTO_WALLET_TON}`\n\n"
+        f"Нажмите на параметр для изменения"
+    )
 
 # ========== ОБРАБОТЧИКИ ==========
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -168,7 +273,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         text = "📊 *Ваши заказы:*\n\n"
         for order in orders:
-            status_emoji = {'pending': '⏳', 'paid': '✅', 'completed': '🎉'}.get(order[3], '❓')
+            status_emoji = {'pending': '⏳', 'paid': '✅', 'completed': '🎉', 'cancelled': '❌'}.get(order[3], '❓')
             text += f"{status_emoji} #{order[0]}\n   📦 {order[1]} отз | {order[2]}₽\n   📅 {order[4][:10]}\n\n"
         await query.edit_message_text(text, parse_mode='Markdown', reply_markup=get_back_keyboard())
         return
@@ -189,6 +294,213 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
     
+    # ========== АДМИН ПАНЕЛЬ ==========
+    if query.data == "admin_panel":
+        if user_id != ADMIN_ID:
+            await query.answer("⛔ Нет доступа", show_alert=True)
+            return
+        await query.edit_message_text("👑 *Админ панель*", parse_mode='Markdown', reply_markup=get_admin_keyboard())
+        return
+    
+    if query.data == "admin_all_orders":
+        if user_id != ADMIN_ID:
+            await query.answer("⛔ Нет доступа", show_alert=True)
+            return
+        orders = get_all_orders()
+        if not orders:
+            await query.edit_message_text("📭 *Нет заказов*", parse_mode='Markdown', reply_markup=get_admin_keyboard())
+            return
+        text = "📋 *ВСЕ ЗАКАЗЫ (последние 20)*\n\n"
+        for order in orders[:20]:
+            status_emoji = {'pending': '⏳', 'paid': '✅', 'completed': '🎉', 'cancelled': '❌'}.get(order[10], '❓')
+            text += f"{status_emoji} `{order[0]}` | {order[3]} отз | {order[5]}₽\n"
+        text += "\n🔍 Для деталей используйте `/check ID`"
+        await query.edit_message_text(text, parse_mode='Markdown', reply_markup=get_admin_keyboard())
+        return
+    
+    if query.data == "admin_pending":
+        if user_id != ADMIN_ID:
+            await query.answer("⛔ Нет доступа", show_alert=True)
+            return
+        orders = get_all_orders('pending')
+        if not orders:
+            await query.edit_message_text("⏳ *Нет заказов в ожидании*", parse_mode='Markdown', reply_markup=get_admin_keyboard())
+            return
+        text = "⏳ *ЗАКАЗЫ В ОЖИДАНИИ ОПЛАТЫ*\n\n"
+        for order in orders:
+            text += f"🆔 `{order[0]}` | {order[3]} отз | @{order[2]}\n"
+        await query.edit_message_text(text, parse_mode='Markdown', reply_markup=get_admin_keyboard())
+        return
+    
+    if query.data == "admin_paid":
+        if user_id != ADMIN_ID:
+            await query.answer("⛔ Нет доступа", show_alert=True)
+            return
+        orders = get_all_orders('paid')
+        if not orders:
+            await query.edit_message_text("✅ *Нет оплаченных заказов*", parse_mode='Markdown', reply_markup=get_admin_keyboard())
+            return
+        text = "✅ *ОПЛАЧЕННЫЕ ЗАКАЗЫ (В РАБОТЕ)*\n\n"
+        for order in orders:
+            text += f"🆔 `{order[0]}` | {order[3]} отз | @{order[2]}\n"
+        await query.edit_message_text(text, parse_mode='Markdown', reply_markup=get_admin_keyboard())
+        return
+    
+    if query.data == "admin_completed":
+        if user_id != ADMIN_ID:
+            await query.answer("⛔ Нет доступа", show_alert=True)
+            return
+        orders = get_all_orders('completed')
+        if not orders:
+            await query.edit_message_text("🎉 *Нет выполненных заказов*", parse_mode='Markdown', reply_markup=get_admin_keyboard())
+            return
+        text = "🎉 *ВЫПОЛНЕННЫЕ ЗАКАЗЫ*\n\n"
+        for order in orders[:20]:
+            text += f"🆔 `{order[0]}` | {order[3]} отз | {order[5]}₽\n"
+        await query.edit_message_text(text, parse_mode='Markdown', reply_markup=get_admin_keyboard())
+        return
+    
+    if query.data == "admin_cancelled":
+        if user_id != ADMIN_ID:
+            await query.answer("⛔ Нет доступа", show_alert=True)
+            return
+        orders = get_all_orders('cancelled')
+        if not orders:
+            await query.edit_message_text("❌ *Нет отмененных заказов*", parse_mode='Markdown', reply_markup=get_admin_keyboard())
+            return
+        text = "❌ *ОТМЕНЕННЫЕ ЗАКАЗЫ*\n\n"
+        for order in orders[:20]:
+            text += f"🆔 `{order[0]}` | {order[3]} отз | {order[15]}\n"
+        await query.edit_message_text(text, parse_mode='Markdown', reply_markup=get_admin_keyboard())
+        return
+    
+    if query.data == "admin_stats":
+        if user_id != ADMIN_ID:
+            await query.answer("⛔ Нет доступа", show_alert=True)
+            return
+        stats = get_stats()
+        text = (
+            f"📊 *СТАТИСТИКА*\n\n"
+            f"📦 Всего заказов: *{stats['total_orders']}*\n"
+            f"✅ Оплаченных: *{stats['paid_orders']}*\n"
+            f"🎉 Выполненных: *{stats['completed_orders']}*\n"
+            f"❌ Отмененных: *{stats['cancelled_orders']}*\n"
+            f"💰 Выручка: *{stats['total_revenue']} ₽*\n"
+            f"⭐ Отзывов: *{stats['total_reviews']}*\n\n"
+            f"📈 *Средний чек:* {stats['total_revenue'] // stats['paid_orders'] if stats['paid_orders'] > 0 else 0} ₽"
+        )
+        await query.edit_message_text(text, parse_mode='Markdown', reply_markup=get_admin_keyboard())
+        return
+    
+    # ========== АДМИН НАСТРОЙКИ ==========
+    if query.data == "admin_settings":
+        if user_id != ADMIN_ID:
+            await query.answer("⛔ Нет доступа", show_alert=True)
+            return
+        await query.edit_message_text(
+            format_settings_text(),
+            parse_mode='Markdown',
+            reply_markup=get_settings_keyboard()
+        )
+        return
+    
+    # ========== ОБРАБОТКА ЗАКАЗОВ (отклонения, возвраты) ==========
+    if query.data.startswith("reject_offers_"):
+        if user_id != ADMIN_ID:
+            await query.answer("⛔ Нет доступа", show_alert=True)
+            return
+        order_id = query.data.replace("reject_offers_", "")
+        order = get_order(order_id)
+        if not order:
+            await query.edit_message_text("❌ Заказ не найден")
+            return
+        reason = f"Нет {MIN_OFFERS} объявлений по {MIN_OFFER_PRICE}₽"
+        cancel_order(order_id, reason)
+        await context.bot.send_message(
+            chat_id=order['user_id'],
+            text=f"❌ *Заказ #{order_id} отклонен*\n\nПричина: {reason}\n\nСоздайте {MIN_OFFERS} объявлений по {MIN_OFFER_PRICE}₽ и попробуйте снова.\n\n📞 Поддержка: {SUPPORT_CONTACT}",
+            parse_mode='Markdown'
+        )
+        await query.edit_message_text(f"✅ Заказ #{order_id} отклонен по причине: нет {MIN_OFFERS} объявлений")
+        return
+    
+    if query.data.startswith("reject_payment_"):
+        if user_id != ADMIN_ID:
+            await query.answer("⛔ Нет доступа", show_alert=True)
+            return
+        order_id = query.data.replace("reject_payment_", "")
+        order = get_order(order_id)
+        if not order:
+            await query.edit_message_text("❌ Заказ не найден")
+            return
+        reason = "Платеж не получен"
+        cancel_order(order_id, reason)
+        await context.bot.send_message(
+            chat_id=order['user_id'],
+            text=f"❌ *Заказ #{order_id} отклонен*\n\nПричина: {reason}\n\nПроверьте правильность перевода и попробуйте снова.\n\n📞 Поддержка: {SUPPORT_CONTACT}",
+            parse_mode='Markdown'
+        )
+        await query.edit_message_text(f"✅ Заказ #{order_id} отклонен по причине: нет перевода")
+        return
+    
+    if query.data.startswith("cancel_"):
+        if user_id != ADMIN_ID:
+            await query.answer("⛔ Нет доступа", show_alert=True)
+            return
+        order_id = query.data.replace("cancel_", "")
+        order = get_order(order_id)
+        if not order:
+            await query.edit_message_text("❌ Заказ не найден")
+            return
+        reason = "Отменен администратором"
+        cancel_order(order_id, reason)
+        await context.bot.send_message(
+            chat_id=order['user_id'],
+            text=f"❌ *Заказ #{order_id} отменен*\n\nПричина: {reason}\n\n📞 Вопросы: {SUPPORT_CONTACT}",
+            parse_mode='Markdown'
+        )
+        await query.edit_message_text(f"✅ Заказ #{order_id} отменен")
+        return
+    
+    if query.data.startswith("refund_"):
+        if user_id != ADMIN_ID:
+            await query.answer("⛔ Нет доступа", show_alert=True)
+            return
+        order_id = query.data.replace("refund_", "")
+        order = get_order(order_id)
+        if not order:
+            await query.edit_message_text("❌ Заказ не найден")
+            return
+        
+        # Для Stars возврат через Telegram
+        if order['payment_method'] == 'stars' and order['telegram_payment_charge_id']:
+            try:
+                # Отправляем запрос на возврат (нужно реализовать через Telegram API)
+                await context.bot.send_message(
+                    chat_id=ADMIN_ID,
+                    text=f"⚠️ *Требуется ручной возврат Stars*\n\nЗаказ #{order_id}\nСумма: {order['amount_stars']}⭐\nCharge ID: {order['telegram_payment_charge_id']}\n\nНеобходимо вернуть средства вручную через @BotFather"
+                )
+                await query.edit_message_text(f"⚠️ Заказ #{order_id} отправлен на возврат. Проверьте @BotFather")
+            except Exception as e:
+                await query.edit_message_text(f"❌ Ошибка возврата: {e}")
+                return
+        else:
+            # Для TON — уведомление админу
+            await context.bot.send_message(
+                chat_id=ADMIN_ID,
+                text=f"⚠️ *Требуется ручной возврат TON*\n\nЗаказ #{order_id}\nСумма: {order['amount_ton']} TON\nКошелек: {CRYPTO_WALLET_TON}\n\nНеобходимо вернуть средства на кошелек пользователя"
+            )
+            await query.edit_message_text(f"⚠️ Заказ #{order_id} отправлен на возврат TON")
+        
+        cancel_order(order_id, "Возврат средств")
+        await context.bot.send_message(
+            chat_id=order['user_id'],
+            text=f"💰 *Возврат средств*\n\nЗаказ #{order_id} отменен, средства возвращаются.\nОжидайте в течение 24 часов.\n\n📞 Вопросы: {SUPPORT_CONTACT}",
+            parse_mode='Markdown'
+        )
+        return
+    
+    # ========== ОСТАЛЬНЫЕ ОБРАБОТЧИКИ ==========
     if query.data.startswith("stars_"):
         order_id = query.data.replace("stars_", "")
         order = get_order(order_id)
@@ -236,12 +548,14 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"📦 Отзывы: {order['reviews_count']}\n"
             f"🔗 Ссылка: {order['funpay_link']}\n"
             f"💰 Сумма: {order['amount_ton']} TON\n\n"
-            f"⚠️ *Проверьте условие:*\n"
-            f"• {MIN_OFFERS} объявлений по {MIN_OFFER_PRICE}₽"
+            f"⚠️ *Проверьте:*\n"
+            f"• {MIN_OFFERS} объявлений по {MIN_OFFER_PRICE}₽\n"
+            f"• Наличие перевода"
         )
         admin_keyboard = [
             [InlineKeyboardButton("✅ Подтвердить", callback_data=f"approve_{order_id}")],
-            [InlineKeyboardButton("❌ Отклонить (нет объявлений)", callback_data=f"reject_{order_id}")]
+            [InlineKeyboardButton("❌ Нет 5 объявлений", callback_data=f"reject_offers_{order_id}")],
+            [InlineKeyboardButton("❌ Нет перевода", callback_data=f"reject_payment_{order_id}")]
         ]
         await context.bot.send_message(chat_id=ADMIN_ID, text=admin_text, parse_mode='Markdown', reply_markup=InlineKeyboardMarkup(admin_keyboard))
         await query.edit_message_text("✅ Заявка отправлена! Администратор проверит платеж и наличие объявлений.", reply_markup=get_back_keyboard())
@@ -262,21 +576,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(f"✅ Заказ #{order_id} подтвержден!")
         return
     
-    if query.data.startswith("reject_"):
-        if user_id != ADMIN_ID:
-            await query.answer("⛔ Нет доступа", show_alert=True)
-            return
-        order_id = query.data.replace("reject_", "")
-        order = get_order(order_id)
-        update_order_status(order_id, 'cancelled')
-        await context.bot.send_message(
-            chat_id=order['user_id'], 
-            text=f"❌ *Заказ отклонен*\n\n🆔 Заказ #{order_id}\n\nПричина: на вашем профиле FunPay нет минимальных {MIN_OFFERS} объявлений по {MIN_OFFER_PRICE}₽.\n\nСоздайте объявления и попробуйте снова.\n\n📞 Поддержка: {SUPPORT_CONTACT}",
-            parse_mode='Markdown'
-        )
-        await query.edit_message_text(f"❌ Заказ #{order_id} отклонен (нет объявлений).")
-        return
-    
     if query.data.startswith("complete_"):
         if user_id != ADMIN_ID:
             await query.answer("⛔ Нет доступа", show_alert=True)
@@ -291,19 +590,72 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         await query.edit_message_text(f"🎉 Заказ #{order_id} выполнен!")
         return
-    
-    if query.data in ["admin_all_orders", "admin_pending", "admin_paid", "admin_completed", "admin_stats"]:
-        if user_id != ADMIN_ID:
-            await query.answer("⛔ Нет доступа", show_alert=True)
-            return
-        await query.edit_message_text("👑 *Админ панель*", parse_mode='Markdown', reply_markup=get_admin_keyboard())
-        return
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     state = context.user_data.get('state')
     user_id = update.effective_user.id
     username = update.effective_user.username or "unknown"
     
+    # Обработка редактирования настроек
+    edit_mode = context.user_data.get('edit_mode')
+    if edit_mode and user_id == ADMIN_ID:
+        try:
+            value = update.message.text.strip()
+            settings = load_settings()
+            
+            if edit_mode == 'price':
+                settings['price_per_review_rub'] = int(value)
+                save_settings(settings)
+                await update.message.reply_text(f"✅ Цена изменена на {value} ₽")
+            elif edit_mode == 'stars':
+                settings['stars_per_review'] = int(value)
+                save_settings(settings)
+                await update.message.reply_text(f"✅ Stars изменены на {value} ⭐")
+            elif edit_mode == 'ton':
+                settings['ton_per_review'] = float(value)
+                save_settings(settings)
+                await update.message.reply_text(f"✅ TON изменен на {value}")
+            elif edit_mode == 'reviews':
+                parts = value.split()
+                if len(parts) >= 2:
+                    settings['min_reviews'] = int(parts[0])
+                    settings['max_reviews'] = int(parts[1])
+                    save_settings(settings)
+                    await update.message.reply_text(f"✅ Диапазон отзывов: {parts[0]} - {parts[1]}")
+                else:
+                    await update.message.reply_text("❌ Формат: `10 500` (мин макс)")
+            elif edit_mode == 'offers':
+                parts = value.split()
+                if len(parts) >= 2:
+                    settings['min_offers'] = int(parts[0])
+                    settings['min_offer_price'] = int(parts[1])
+                    save_settings(settings)
+                    await update.message.reply_text(f"✅ Условие: {parts[0]} объявлений по {parts[1]}₽")
+                else:
+                    await update.message.reply_text("❌ Формат: `5 1` (количество цена)")
+            elif edit_mode == 'wallet':
+                settings['crypto_wallet_ton'] = value
+                save_settings(settings)
+                await update.message.reply_text(f"✅ Кошелек обновлен")
+            
+            # Обновляем глобальные переменные
+            global PRICE_PER_REVIEW_RUB, STARS_PER_REVIEW, TON_PER_REVIEW, MIN_REVIEWS, MAX_REVIEWS, MIN_OFFERS, MIN_OFFER_PRICE, CRYPTO_WALLET_TON
+            PRICE_PER_REVIEW_RUB = settings['price_per_review_rub']
+            STARS_PER_REVIEW = settings['stars_per_review']
+            TON_PER_REVIEW = settings['ton_per_review']
+            MIN_REVIEWS = settings['min_reviews']
+            MAX_REVIEWS = settings['max_reviews']
+            MIN_OFFERS = settings['min_offers']
+            MIN_OFFER_PRICE = settings['min_offer_price']
+            CRYPTO_WALLET_TON = settings['crypto_wallet_ton']
+            
+        except Exception as e:
+            await update.message.reply_text(f"❌ Ошибка: {e}")
+        
+        context.user_data['edit_mode'] = None
+        return
+    
+    # Обычная обработка заказов
     if state == 'waiting_reviews_count':
         try:
             reviews_count = int(update.message.text)
@@ -312,9 +664,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 context.user_data['state'] = 'waiting_funpay_link'
                 await update.message.reply_text(
                     f"✅ *{reviews_count} отзывов*\n\n"
-                    f"💰 *Сумма:* {reviews_count * 33}₽\n"
-                    f"💎 *Stars:* {reviews_count * 35}⭐\n"
-                    f"🪙 *TON:* {round(reviews_count * 0.3, 2)} TON\n\n"
+                    f"💰 *Сумма:* {reviews_count * PRICE_PER_REVIEW_RUB}₽\n"
+                    f"💎 *Stars:* {reviews_count * STARS_PER_REVIEW}⭐\n"
+                    f"🪙 *TON:* {round(reviews_count * TON_PER_REVIEW, 2)} TON\n\n"
                     f"⚠️ *Напоминание:* на вашем профиле должно быть минимум {MIN_OFFERS} объявлений по {MIN_OFFER_PRICE}₽\n\n"
                     f"🔗 *Отправьте ссылку на профиль FunPay:*\n\n"
                     f"Пример: `https://funpay.com/users/123456/`",
@@ -331,16 +683,20 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reviews_count = context.user_data['reviews_count']
             order_id = str(uuid.uuid4())[:8]
             save_order(order_id, user_id, username, reviews_count, update.message.text,
-                      reviews_count*33, reviews_count*35, round(reviews_count*0.3,2), None)
+                      reviews_count * PRICE_PER_REVIEW_RUB, 
+                      reviews_count * STARS_PER_REVIEW, 
+                      round(reviews_count * TON_PER_REVIEW, 2), None)
             context.user_data['state'] = None
             await update.message.reply_text(
                 f"🆔 *Заказ #{order_id} создан!*\n\n"
                 f"📦 {reviews_count} отзывов\n"
-                f"💰 {reviews_count*33}₽\n\n"
+                f"💰 {reviews_count * PRICE_PER_REVIEW_RUB}₽\n\n"
                 f"⚠️ *Условие:* {MIN_OFFERS} объявлений по {MIN_OFFER_PRICE}₽\n\n"
                 f"*Выберите способ оплаты:*",
                 parse_mode='Markdown',
-                reply_markup=get_payment_keyboard(order_id, reviews_count*35, round(reviews_count*0.3,2))
+                reply_markup=get_payment_keyboard(order_id, 
+                    reviews_count * STARS_PER_REVIEW, 
+                    round(reviews_count * TON_PER_REVIEW, 2))
             )
         else:
             await update.message.reply_text("❌ Неверная ссылка. Пример: https://funpay.com/users/123456/")
@@ -382,26 +738,27 @@ async def successful_payment_handler(update: Update, context: ContextTypes.DEFAU
         parse_mode='Markdown',
         reply_markup=InlineKeyboardMarkup([
             [InlineKeyboardButton("✅ Подтвердить", callback_data=f"approve_{order_id}")],
-            [InlineKeyboardButton("❌ Отклонить (нет объявлений)", callback_data=f"reject_{order_id}")],
+            [InlineKeyboardButton("❌ Нет 5 объявлений", callback_data=f"reject_offers_{order_id}")],
+            [InlineKeyboardButton("💰 Вернуть средства", callback_data=f"refund_{order_id}")],
             [InlineKeyboardButton("🎉 Выполнен", callback_data=f"complete_{order_id}")]
         ])
     )
 
+async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        await update.message.reply_text("⛔ Нет доступа")
+        return
+    await update.message.reply_text("👑 *Админ панель*", parse_mode='Markdown', reply_markup=get_admin_keyboard())
+
 async def check_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Команда /check ID - проверка заказа (только админ)"""
-    user_id = update.effective_user.id
-    
-    if user_id != ADMIN_ID:
+    if update.effective_user.id != ADMIN_ID:
         await update.message.reply_text("⛔ Нет доступа")
         return
     
     args = context.args
     if not args:
-        await update.message.reply_text(
-            "📝 *Использование:* `/check ORDER_ID`\n\n"
-            "Пример: `/check a1b2c3d4`",
-            parse_mode='Markdown'
-        )
+        await update.message.reply_text("📝 *Использование:* `/check ORDER_ID`\n\nПример: `/check a1b2c3d4`", parse_mode='Markdown')
         return
     
     order_id = args[0]
@@ -411,7 +768,6 @@ async def check_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"❌ Заказ `{order_id}` не найден", parse_mode='Markdown')
         return
     
-    # Статусы
     status_text = {
         'pending': '⏳ Ожидает оплаты',
         'paid': '✅ Оплачен, в работе',
@@ -420,10 +776,8 @@ async def check_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     }.get(order['status'], '❓ Неизвестно')
     
     text = (
-        f"📋 *Детали заказа*\n\n"
-        f"🆔 ID: `{order_id}`\n"
-        f"👤 Пользователь: @{order['username']}\n"
-        f"🆔 User ID: `{order['user_id']}`\n"
+        f"📋 *Детали заказа #{order_id}*\n\n"
+        f"👤 Пользователь: @{order['username']} (ID: {order['user_id']})\n"
         f"📦 Отзывы: {order['reviews_count']}\n"
         f"🔗 Ссылка: {order['funpay_link']}\n"
         f"💰 Сумма: {order['amount_rub']} ₽\n"
@@ -436,15 +790,26 @@ async def check_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if order['paid_at']:
         text += f"✅ Оплачен: {order['paid_at'][:19]}\n"
     if order['completed_at']:
-        text += f"🎉 Выполнен: {order['completed_at'][:19]}"
+        text += f"🎉 Выполнен: {order['completed_at'][:19]}\n"
+    if order['cancelled_at']:
+        text += f"❌ Отменен: {order['cancelled_at'][:19]}\nПричина: {order['cancel_reason']}"
     
-    await update.message.reply_text(text, parse_mode='Markdown')
-
-async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ADMIN_ID:
-        await update.message.reply_text("⛔ Нет доступа")
-        return
-    await update.message.reply_text("👑 *Админ панель*", parse_mode='Markdown', reply_markup=get_admin_keyboard())
+    # Кнопки действий для админа
+    keyboard = []
+    if order['status'] == 'pending':
+        keyboard.append([InlineKeyboardButton("✅ Подтвердить оплату", callback_data=f"approve_{order_id}")])
+        keyboard.append([InlineKeyboardButton("❌ Нет 5 объявлений", callback_data=f"reject_offers_{order_id}")])
+        keyboard.append([InlineKeyboardButton("❌ Нет перевода", callback_data=f"reject_payment_{order_id}")])
+    if order['status'] == 'paid':
+        keyboard.append([InlineKeyboardButton("🎉 Выполнен", callback_data=f"complete_{order_id}")])
+        keyboard.append([InlineKeyboardButton("💰 Вернуть средства", callback_data=f"refund_{order_id}")])
+    if order['status'] in ['pending', 'paid']:
+        keyboard.append([InlineKeyboardButton("🗑 Отменить заказ", callback_data=f"cancel_{order_id}")])
+    
+    if keyboard:
+        await update.message.reply_text(text, parse_mode='Markdown', reply_markup=InlineKeyboardMarkup(keyboard))
+    else:
+        await update.message.reply_text(text, parse_mode='Markdown')
 
 # ========== FLASK ДЛЯ KEEP-ALIVE ==========
 flask_app = Flask(__name__)
@@ -458,7 +823,6 @@ def run_flask():
 
 # ========== ЗАПУСК ==========
 async def run_bot():
-    """Асинхронный запуск бота"""
     application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
     
     application.add_handler(CommandHandler("start", start))
@@ -473,19 +837,16 @@ async def run_bot():
     await application.initialize()
     await application.start()
     await application.updater.start_polling()
-    # Держим бота запущенным
     while True:
         await asyncio.sleep(3600)
 
 def main():
     init_db()
     
-    # Запускаем Flask в отдельном потоке
     flask_thread = threading.Thread(target=run_flask, daemon=True)
     flask_thread.start()
     logger.info("Flask keep-alive запущен на порту 10000")
     
-    # Запускаем бота в асинхронном режиме
     try:
         asyncio.run(run_bot())
     except KeyboardInterrupt:
