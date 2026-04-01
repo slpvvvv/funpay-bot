@@ -882,7 +882,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 success += 1
             except:
                 fail += 1
-            await asyncio.sleep(0.05)  # чтобы не блокировать
+            await asyncio.sleep(0.05)
             
         await update.message.reply_text(f"✅ Рассылка завершена!\n\n✅ Успешно: {success}\n❌ Ошибок: {fail}", reply_markup=get_admin_keyboard())
         context.user_data['broadcast_mode'] = False
@@ -955,7 +955,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data['edit_mode'] = None
         return
     
-    # Обычная обработка заказов
+    # ========== ОСНОВНАЯ ОБРАБОТКА ЗАКАЗОВ ==========
     if state == 'waiting_reviews_count':
         try:
             reviews_count = int(update.message.text)
@@ -974,19 +974,24 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 )
             else:
                 await update.message.reply_text(f"❌ От {MIN_REVIEWS} до {MAX_REVIEWS}")
-        except:
+        except ValueError:
             await update.message.reply_text("❌ Введите число")
         return
     
     if state == 'waiting_funpay_link':
+        print(f"DEBUG: Получена ссылка: {update.message.text}")  # для отладки
+        
         if "funpay.com" in update.message.text:
             reviews_count = context.user_data['reviews_count']
             order_id = str(uuid.uuid4())[:8]
+            
             save_order(order_id, user_id, username, reviews_count, update.message.text,
                       reviews_count * PRICE_PER_REVIEW_RUB, 
                       reviews_count * STARS_PER_REVIEW, 
                       round(reviews_count * TON_PER_REVIEW, 2), None)
+            
             context.user_data['state'] = None
+            
             await update.message.reply_text(
                 f"🆔 *ЗАКАЗ #{order_id} СОЗДАН!*\n\n"
                 f"📦 {reviews_count} отзывов\n"
