@@ -189,7 +189,7 @@ def get_stats():
 # ========== КЛАВИАТУРЫ ==========
 def get_main_keyboard():
     keyboard = [
-        [InlineKeyboardButton("📝 Оставить отзыв", callback_data="order")],
+        [InlineKeyboardButton("📝 Заказать отзывы", callback_data="order")],
         [InlineKeyboardButton("📊 Мои заказы", callback_data="my_orders")],
         [InlineKeyboardButton("ℹ️ Помощь", callback_data="help")]
     ]
