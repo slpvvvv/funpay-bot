@@ -253,7 +253,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"🪙 *TON:* {TON_PER_REVIEW} TON за отзыв\n\n"
         f"⚠️ *ВАЖНОЕ УСЛОВИЕ:*\n"
         f"• На вашем профиле FunPay должно быть минимум *{MIN_OFFERS} объявлений*\n"
-        f"• Цена каждого объявления от *{MIN_OFFER_PRICE}₽*\n\n"
+        f"• Цена каждого объявления *{MIN_OFFER_PRICE}₽*\n\n"
         f"📞 Поддержка: {SUPPORT_CONTACT}",
         parse_mode='Markdown', reply_markup=get_main_keyboard()
     )
