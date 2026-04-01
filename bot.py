@@ -5,6 +5,8 @@ import threading
 import os
 import asyncio
 import json
+import requests
+import time
 from datetime import datetime
 from flask import Flask, jsonify
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, LabeledPrice
@@ -17,8 +19,8 @@ from telegram.ext import (
 TELEGRAM_BOT_TOKEN = "8668091678:AAHYsrKBDYfekWfP1x-gLPD6pwAAvBLzrGA"
 ADMIN_ID = 6480073415
 SUPPORT_CONTACT = "@gortonn"
-SETTINGS_FILE = "settings.json"
 FUNPAY_OFFER_URL = "https://funpay.com/lots/offerEdit?node=703&offer=66845478"
+SETTINGS_FILE = "settings.json"
 
 # Настройки по умолчанию
 DEFAULT_SETTINGS = {
@@ -63,14 +65,12 @@ def init_db():
     conn = sqlite3.connect('orders.db')
     c = conn.cursor()
     
-    # Создаем таблицу с новой структурой
     c.execute('''CREATE TABLE IF NOT EXISTS orders
                  (order_id TEXT PRIMARY KEY, user_id INTEGER, username TEXT, reviews_count INTEGER,
                   funpay_link TEXT, amount_rub INTEGER, amount_stars INTEGER, amount_ton REAL,
                   payment_method TEXT, telegram_payment_charge_id TEXT, status TEXT,
                   created_at TEXT, paid_at TEXT, completed_at TEXT, cancelled_at TEXT, cancel_reason TEXT)''')
     
-    # Проверяем и добавляем недостающие колонки для старых баз
     try:
         c.execute("ALTER TABLE orders ADD COLUMN cancelled_at TEXT")
     except sqlite3.OperationalError:
@@ -190,7 +190,7 @@ def get_stats():
 # ========== КЛАВИАТУРЫ ==========
 def get_main_keyboard():
     keyboard = [
-        [InlineKeyboardButton("📝 Заказать отзывы", callback_data="order")],
+        [InlineKeyboardButton("📝 Оставить отзыв", callback_data="order")],
         [InlineKeyboardButton("📊 Мои заказы", callback_data="my_orders")],
         [InlineKeyboardButton("ℹ️ Помощь", callback_data="help")]
     ]
@@ -255,7 +255,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"🪙 *TON:* {TON_PER_REVIEW} TON за отзыв\n\n"
         f"⚠️ *ВАЖНОЕ УСЛОВИЕ:*\n"
         f"• На вашем профиле FunPay должно быть минимум *{MIN_OFFERS} объявлений*\n"
-        f"• Цена каждого объявления *{MIN_OFFER_PRICE}₽*\n\n"
+        f"• Цена каждого объявления от *{MIN_OFFER_PRICE}₽*\n\n"
         f"📞 Поддержка: {SUPPORT_CONTACT}",
         parse_mode='Markdown', reply_markup=get_main_keyboard()
     )
@@ -507,7 +507,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
     
-    # ========== ОБРАБОТКА ЗАКАЗОВ ==========
+    # ========== ОБРАБОТКА ОПЛАТ ==========
     if query.data.startswith("stars_"):
         order_id = query.data.replace("stars_", "")
         order = get_order(order_id)
@@ -542,30 +542,31 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode='Markdown', reply_markup=InlineKeyboardMarkup(keyboard)
         )
         return
-if query.data.startswith("funpay_"):
-    order_id = query.data.replace("funpay_", "")
-    order = get_order(order_id)
-    if not order or order['status'] != 'pending':
-        await query.edit_message_text("❌ Заказ не найден", reply_markup=get_back_keyboard())
-        return
     
-    text = (
-        f"🎮 *Оплата через FunPay*\n\n"
-        f"💰 Сумма: *{order['amount_rub']} ₽*\n"
-        f"📦 Отзывы: {order['reviews_count']}\n\n"
-        f"⚠️ *ВНИМАНИЕ!*\n"
-        f"Перед оплатой обязательно прочитайте [описание товара]({FUNPAY_OFFER_URL}),\n"
-        f"чтобы подтвердить согласие с условиями.\n\n"
-        f"После перевода нажмите кнопку *«Я оплатил»* — администратор проверит заказ."
-    )
-    keyboard = [[InlineKeyboardButton("✅ Я оплатил", callback_data=f"confirm_funpay_{order_id}")]]
-    await query.edit_message_text(
-        text,
-        parse_mode='Markdown',
-        reply_markup=InlineKeyboardMarkup(keyboard),
-        disable_web_page_preview=True
-    )
-    return
+    if query.data.startswith("funpay_"):
+        order_id = query.data.replace("funpay_", "")
+        order = get_order(order_id)
+        if not order or order['status'] != 'pending':
+            await query.edit_message_text("❌ Заказ не найден", reply_markup=get_back_keyboard())
+            return
+        
+        text = (
+            f"🎮 *Оплата через FunPay*\n\n"
+            f"💰 Сумма: *{order['amount_rub']} ₽*\n"
+            f"📦 Отзывы: {order['reviews_count']}\n\n"
+            f"⚠️ *ВНИМАНИЕ!*\n"
+            f"Перед оплатой обязательно прочитайте [описание товара]({FUNPAY_OFFER_URL}),\n"
+            f"чтобы подтвердить согласие с условиями.\n\n"
+            f"После перевода нажмите кнопку *«Я оплатил»* — администратор проверит заказ."
+        )
+        keyboard = [[InlineKeyboardButton("✅ Я оплатил", callback_data=f"confirm_funpay_{order_id}")]]
+        await query.edit_message_text(
+            text,
+            parse_mode='Markdown',
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            disable_web_page_preview=True
+        )
+        return
     
     if query.data.startswith("confirm_crypto_"):
         order_id = query.data.replace("confirm_crypto_", "")
@@ -591,46 +592,46 @@ if query.data.startswith("funpay_"):
         await context.bot.send_message(chat_id=ADMIN_ID, text=admin_text, parse_mode='Markdown', reply_markup=InlineKeyboardMarkup(admin_keyboard))
         await query.edit_message_text("✅ Заявка отправлена! Администратор проверит платеж и наличие объявлений.", reply_markup=get_back_keyboard())
         return
-
-if query.data.startswith("confirm_funpay_"):
-    order_id = query.data.replace("confirm_funpay_", "")
-    order = get_order(order_id)
-    if not order:
+    
+    if query.data.startswith("confirm_funpay_"):
+        order_id = query.data.replace("confirm_funpay_", "")
+        order = get_order(order_id)
+        if not order:
+            return
+        
+        update_order_status(order_id, 'waiting_verification')
+        
+        admin_text = (
+            f"🟡 *ЗАКАЗ ОЖИДАЕТ ПРОВЕРКИ (FunPay)*\n\n"
+            f"🆔 Заказ: `{order_id}`\n"
+            f"👤 Пользователь: @{order['username']} (ID: {order['user_id']})\n"
+            f"📦 Отзывы: {order['reviews_count']}\n"
+            f"🔗 Ссылка FunPay: {order['funpay_link']}\n"
+            f"💰 Сумма: {order['amount_rub']} ₽\n"
+            f"💳 Способ: FunPay\n\n"
+            f"⚠️ Проверьте платеж по ссылке: {FUNPAY_OFFER_URL}"
+        )
+        admin_keyboard = [
+            [InlineKeyboardButton("✅ Подтвердить оплату", callback_data=f"approve_{order_id}")],
+            [InlineKeyboardButton("❌ Отклонить", callback_data=f"reject_funpay_{order_id}")]
+        ]
+        await context.bot.send_message(
+            chat_id=ADMIN_ID,
+            text=admin_text,
+            parse_mode='Markdown',
+            reply_markup=InlineKeyboardMarkup(admin_keyboard),
+            disable_web_page_preview=True
+        )
+        
+        await query.edit_message_text(
+            f"✅ *Заявка отправлена!*\n\n"
+            f"Администратор проверит оплату и подтвердит заказ.\n"
+            f"Обычно это занимает до 15 минут.\n\n"
+            f"🆔 Заказ: `{order_id}`",
+            parse_mode='Markdown',
+            reply_markup=get_back_keyboard()
+        )
         return
-    
-    update_order_status(order_id, 'waiting_verification')
-    
-    admin_text = (
-        f"🟡 *ЗАКАЗ ОЖИДАЕТ ПРОВЕРКИ (FunPay)*\n\n"
-        f"🆔 Заказ: `{order_id}`\n"
-        f"👤 Пользователь: @{order['username']} (ID: {order['user_id']})\n"
-        f"📦 Отзывы: {order['reviews_count']}\n"
-        f"🔗 Ссылка FunPay: {order['funpay_link']}\n"
-        f"💰 Сумма: {order['amount_rub']} ₽\n"
-        f"💳 Способ: FunPay\n\n"
-        f"⚠️ Проверьте платеж по ссылке: {FUNPAY_OFFER_URL}"
-    )
-    admin_keyboard = [
-        [InlineKeyboardButton("✅ Подтвердить оплату", callback_data=f"approve_{order_id}")],
-        [InlineKeyboardButton("❌ Отклонить", callback_data=f"reject_funpay_{order_id}")]
-    ]
-    await context.bot.send_message(
-        chat_id=ADMIN_ID,
-        text=admin_text,
-        parse_mode='Markdown',
-        reply_markup=InlineKeyboardMarkup(admin_keyboard),
-        disable_web_page_preview=True
-    )
-    
-    await query.edit_message_text(
-        f"✅ *Заявка отправлена!*\n\n"
-        f"Администратор проверит оплату и подтвердит заказ.\n"
-        f"Обычно это занимает до 15 минут.\n\n"
-        f"🆔 Заказ: `{order_id}`",
-        parse_mode='Markdown',
-        reply_markup=get_back_keyboard()
-    )
-    return
     
     if query.data.startswith("approve_"):
         if user_id != ADMIN_ID:
@@ -684,27 +685,27 @@ if query.data.startswith("confirm_funpay_"):
         )
         await query.edit_message_text(f"✅ Заказ #{order_id} отклонен по причине: нет перевода")
         return
-
-if query.data.startswith("reject_funpay_"):
-    if user_id != ADMIN_ID:
-        await query.answer("⛔ Нет доступа", show_alert=True)
-        return
-    order_id = query.data.replace("reject_funpay_", "")
-    order = get_order(order_id)
-    if not order:
-        await query.edit_message_text("❌ Заказ не найден")
-        return
     
-    reason = "Оплата через FunPay не подтверждена"
-    cancel_order(order_id, reason)
-    
-    await context.bot.send_message(
-        chat_id=order['user_id'],
-        text=f"❌ *Заказ #{order_id} отклонен*\n\nПричина: {reason}\n\nПроверьте, что вы перевели точную сумму и указали верный ID заказа.\n\n📞 Поддержка: {SUPPORT_CONTACT}",
-        parse_mode='Markdown'
-    )
-    await query.edit_message_text(f"✅ Заказ #{order_id} отклонен (оплата не подтверждена)")
-    return
+    if query.data.startswith("reject_funpay_"):
+        if user_id != ADMIN_ID:
+            await query.answer("⛔ Нет доступа", show_alert=True)
+            return
+        order_id = query.data.replace("reject_funpay_", "")
+        order = get_order(order_id)
+        if not order:
+            await query.edit_message_text("❌ Заказ не найден")
+            return
+        
+        reason = "Оплата через FunPay не подтверждена"
+        cancel_order(order_id, reason)
+        
+        await context.bot.send_message(
+            chat_id=order['user_id'],
+            text=f"❌ *Заказ #{order_id} отклонен*\n\nПричина: {reason}\n\nПроверьте, что вы перевели точную сумму и указали верный ID заказа.\n\n📞 Поддержка: {SUPPORT_CONTACT}",
+            parse_mode='Markdown'
+        )
+        await query.edit_message_text(f"✅ Заказ #{order_id} отклонен (оплата не подтверждена)")
+        return
     
     if query.data.startswith("cancel_"):
         if user_id != ADMIN_ID:
@@ -835,7 +836,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             MIN_OFFER_PRICE = settings['min_offer_price']
             CRYPTO_WALLET_TON = settings['crypto_wallet_ton']
             
-            # Возвращаемся к настройкам
             await update.message.reply_text(
                 format_settings_text(),
                 parse_mode='Markdown',
@@ -944,7 +944,6 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("👑 *Админ панель*", parse_mode='Markdown', reply_markup=get_admin_keyboard())
 
 async def check_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Команда /check ID - проверка заказа (только админ)"""
     if update.effective_user.id != ADMIN_ID:
         await update.message.reply_text("⛔ Нет доступа")
         return
@@ -990,7 +989,6 @@ async def check_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(text, parse_mode='Markdown')
 
 # ========== FLASK ДЛЯ KEEP-ALIVE ==========
-# ========== FLASK ДЛЯ KEEP-ALIVE ==========
 flask_app = Flask(__name__)
 
 @flask_app.route('/')
@@ -999,25 +997,23 @@ def index():
 
 def run_flask():
     flask_app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 10000)))
-# ========== АВТО-ПИНГ ==========
-import requests
-import time
 
+# ========== АВТО-ПИНГ ==========
 def start_self_ping():
-    """Запускает авто-пинг каждые 5 минут в отдельном потоке"""
     def ping_loop():
         url = f"http://localhost:10000/"
         while True:
             try:
-                response = requests.get(url, timeout=10)
+                response = requests.get(url, timeout=5)
                 logger.info(f"🔄 Self-ping: {response.status_code}")
             except Exception as e:
                 logger.error(f"❌ Self-ping error: {e}")
-            time.sleep(300)  # 5 минут
+            time.sleep(240)  # 4 минуты
     
     ping_thread = threading.Thread(target=ping_loop, daemon=True)
     ping_thread.start()
-    logger.info("🚀 Self-ping запущен (каждые 5 минут)")
+    logger.info("🚀 Self-ping запущен (каждые 4 минуты)")
+
 # ========== ЗАПУСК ==========
 async def run_bot():
     application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
@@ -1040,12 +1036,10 @@ async def run_bot():
 def main():
     init_db()
     
-    # Запускаем Flask
     flask_thread = threading.Thread(target=run_flask, daemon=True)
     flask_thread.start()
     logger.info("Flask keep-alive запущен на порту 10000")
     
-    # Запускаем авто-пинг (бот сам себя будет пинговать)
     start_self_ping()
     
     try:
