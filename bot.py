@@ -61,11 +61,25 @@ logger = logging.getLogger(__name__)
 def init_db():
     conn = sqlite3.connect('orders.db')
     c = conn.cursor()
+    
+    # Создаем таблицу с новой структурой
     c.execute('''CREATE TABLE IF NOT EXISTS orders
                  (order_id TEXT PRIMARY KEY, user_id INTEGER, username TEXT, reviews_count INTEGER,
                   funpay_link TEXT, amount_rub INTEGER, amount_stars INTEGER, amount_ton REAL,
                   payment_method TEXT, telegram_payment_charge_id TEXT, status TEXT,
                   created_at TEXT, paid_at TEXT, completed_at TEXT, cancelled_at TEXT, cancel_reason TEXT)''')
+    
+    # Проверяем и добавляем недостающие колонки для старых баз
+    try:
+        c.execute("ALTER TABLE orders ADD COLUMN cancelled_at TEXT")
+    except sqlite3.OperationalError:
+        pass  # колонка уже существует
+    
+    try:
+        c.execute("ALTER TABLE orders ADD COLUMN cancel_reason TEXT")
+    except sqlite3.OperationalError:
+        pass  # колонка уже существует
+    
     conn.commit()
     conn.close()
     logger.info("База данных готова")
@@ -111,14 +125,30 @@ def update_order_completed(order_id):
 def get_order(order_id):
     conn = sqlite3.connect('orders.db')
     c = conn.cursor()
-    c.execute('SELECT * FROM orders WHERE order_id=?', (order_id,))
-    row = c.fetchone()
-    conn.close()
-    if row:
-        return {'order_id': row[0], 'user_id': row[1], 'username': row[2], 'reviews_count': row[3],
-                'funpay_link': row[4], 'amount_rub': row[5], 'amount_stars': row[6], 'amount_ton': row[7],
-                'payment_method': row[8], 'telegram_payment_charge_id': row[9], 'status': row[10],
-                'created_at': row[11], 'paid_at': row[12], 'completed_at': row[13], 'cancelled_at': row[14], 'cancel_reason': row[15]}
+    try:
+        c.execute('SELECT * FROM orders WHERE order_id=?', (order_id,))
+        row = c.fetchone()
+        conn.close()
+        if row:
+            # Определяем количество колонок
+            if len(row) >= 16:
+                return {'order_id': row[0], 'user_id': row[1], 'username': row[2], 'reviews_count': row[3],
+                        'funpay_link': row[4], 'amount_rub': row[5], 'amount_stars': row[6], 'amount_ton': row[7],
+                        'payment_method': row[8], 'telegram_payment_charge_id': row[9], 'status': row[10],
+                        'created_at': row[11], 'paid_at': row[12], 'completed_at': row[13], 
+                        'cancelled_at': row[14] if len(row) > 14 else None, 
+                        'cancel_reason': row[15] if len(row) > 15 else None}
+            else:
+                # Старая структура без cancelled
+                return {'order_id': row[0], 'user_id': row[1], 'username': row[2], 'reviews_count': row[3],
+                        'funpay_link': row[4], 'amount_rub': row[5], 'amount_stars': row[6], 'amount_ton': row[7],
+                        'payment_method': row[8], 'telegram_payment_charge_id': row[9], 'status': row[10],
+                        'created_at': row[11], 'paid_at': row[12], 'completed_at': row[13],
+                        'cancelled_at': None, 'cancel_reason': None}
+    except Exception as e:
+        logger.error(f"get_order error: {e}")
+        conn.close()
+        return None
     return None
 
 def get_user_orders(user_id):
