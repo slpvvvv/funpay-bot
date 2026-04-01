@@ -189,7 +189,7 @@ def get_order_actions_keyboard(order_id, status):
         keyboard.append([InlineKeyboardButton("🎉 Выполнен", callback_data=f"complete_{order_id}")])
         keyboard.append([InlineKeyboardButton("💰 Вернуть средства", callback_data=f"refund_{order_id}")])
     if status in ['pending', 'paid']:
-        keyboard.append([InlineKeyboardButton("🗑 Отменить заказ", callback_data=f"cancel_{order_id}"])])
+        keyboard.append([InlineKeyboardButton("🗑 Отменить заказ", callback_data=f"cancel_{order_id}")])
     keyboard.append([InlineKeyboardButton("🔙 Назад", callback_data="admin_panel")])
     return InlineKeyboardMarkup(keyboard)
 
