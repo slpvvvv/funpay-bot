@@ -18,6 +18,7 @@ TELEGRAM_BOT_TOKEN = "8668091678:AAHYsrKBDYfekWfP1x-gLPD6pwAAvBLzrGA"
 ADMIN_ID = 6480073415
 SUPPORT_CONTACT = "@gortonn"
 SETTINGS_FILE = "settings.json"
+FUNPAY_OFFER_URL = "https://funpay.com/lots/offerEdit?node=703&offer=66845478"
 
 # Настройки по умолчанию
 DEFAULT_SETTINGS = {
@@ -202,6 +203,7 @@ def get_payment_keyboard(order_id, amount_stars, amount_ton):
     keyboard = [
         [InlineKeyboardButton(f"💎 Telegram Stars ({amount_stars}⭐)", callback_data=f"stars_{order_id}")],
         [InlineKeyboardButton(f"🪙 TON ({amount_ton} TON)", callback_data=f"crypto_{order_id}")],
+        [InlineKeyboardButton(f"🎮 FunPay (33₽ за отзыв)", callback_data=f"funpay_{order_id}")],
         [InlineKeyboardButton("🔙 Назад", callback_data="back_to_main")]
     ]
     return InlineKeyboardMarkup(keyboard)
@@ -540,6 +542,30 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode='Markdown', reply_markup=InlineKeyboardMarkup(keyboard)
         )
         return
+if query.data.startswith("funpay_"):
+    order_id = query.data.replace("funpay_", "")
+    order = get_order(order_id)
+    if not order or order['status'] != 'pending':
+        await query.edit_message_text("❌ Заказ не найден", reply_markup=get_back_keyboard())
+        return
+    
+    text = (
+        f"🎮 *Оплата через FunPay*\n\n"
+        f"💰 Сумма: *{order['amount_rub']} ₽*\n"
+        f"📦 Отзывы: {order['reviews_count']}\n\n"
+        f"⚠️ *ВНИМАНИЕ!*\n"
+        f"Перед оплатой обязательно прочитайте [описание товара]({FUNPAY_OFFER_URL}),\n"
+        f"чтобы подтвердить согласие с условиями.\n\n"
+        f"После перевода нажмите кнопку *«Я оплатил»* — администратор проверит заказ."
+    )
+    keyboard = [[InlineKeyboardButton("✅ Я оплатил", callback_data=f"confirm_funpay_{order_id}")]]
+    await query.edit_message_text(
+        text,
+        parse_mode='Markdown',
+        reply_markup=InlineKeyboardMarkup(keyboard),
+        disable_web_page_preview=True
+    )
+    return
     
     if query.data.startswith("confirm_crypto_"):
         order_id = query.data.replace("confirm_crypto_", "")
@@ -565,6 +591,46 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await context.bot.send_message(chat_id=ADMIN_ID, text=admin_text, parse_mode='Markdown', reply_markup=InlineKeyboardMarkup(admin_keyboard))
         await query.edit_message_text("✅ Заявка отправлена! Администратор проверит платеж и наличие объявлений.", reply_markup=get_back_keyboard())
         return
+
+if query.data.startswith("confirm_funpay_"):
+    order_id = query.data.replace("confirm_funpay_", "")
+    order = get_order(order_id)
+    if not order:
+        return
+    
+    update_order_status(order_id, 'waiting_verification')
+    
+    admin_text = (
+        f"🟡 *ЗАКАЗ ОЖИДАЕТ ПРОВЕРКИ (FunPay)*\n\n"
+        f"🆔 Заказ: `{order_id}`\n"
+        f"👤 Пользователь: @{order['username']} (ID: {order['user_id']})\n"
+        f"📦 Отзывы: {order['reviews_count']}\n"
+        f"🔗 Ссылка FunPay: {order['funpay_link']}\n"
+        f"💰 Сумма: {order['amount_rub']} ₽\n"
+        f"💳 Способ: FunPay\n\n"
+        f"⚠️ Проверьте платеж по ссылке: {FUNPAY_OFFER_URL}"
+    )
+    admin_keyboard = [
+        [InlineKeyboardButton("✅ Подтвердить оплату", callback_data=f"approve_{order_id}")],
+        [InlineKeyboardButton("❌ Отклонить", callback_data=f"reject_funpay_{order_id}")]
+    ]
+    await context.bot.send_message(
+        chat_id=ADMIN_ID,
+        text=admin_text,
+        parse_mode='Markdown',
+        reply_markup=InlineKeyboardMarkup(admin_keyboard),
+        disable_web_page_preview=True
+    )
+    
+    await query.edit_message_text(
+        f"✅ *Заявка отправлена!*\n\n"
+        f"Администратор проверит оплату и подтвердит заказ.\n"
+        f"Обычно это занимает до 15 минут.\n\n"
+        f"🆔 Заказ: `{order_id}`",
+        parse_mode='Markdown',
+        reply_markup=get_back_keyboard()
+    )
+    return
     
     if query.data.startswith("approve_"):
         if user_id != ADMIN_ID:
@@ -618,6 +684,27 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         await query.edit_message_text(f"✅ Заказ #{order_id} отклонен по причине: нет перевода")
         return
+
+if query.data.startswith("reject_funpay_"):
+    if user_id != ADMIN_ID:
+        await query.answer("⛔ Нет доступа", show_alert=True)
+        return
+    order_id = query.data.replace("reject_funpay_", "")
+    order = get_order(order_id)
+    if not order:
+        await query.edit_message_text("❌ Заказ не найден")
+        return
+    
+    reason = "Оплата через FunPay не подтверждена"
+    cancel_order(order_id, reason)
+    
+    await context.bot.send_message(
+        chat_id=order['user_id'],
+        text=f"❌ *Заказ #{order_id} отклонен*\n\nПричина: {reason}\n\nПроверьте, что вы перевели точную сумму и указали верный ID заказа.\n\n📞 Поддержка: {SUPPORT_CONTACT}",
+        parse_mode='Markdown'
+    )
+    await query.edit_message_text(f"✅ Заказ #{order_id} отклонен (оплата не подтверждена)")
+    return
     
     if query.data.startswith("cancel_"):
         if user_id != ADMIN_ID:
