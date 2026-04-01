@@ -846,7 +846,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         update_order_completed(order_id)
         await context.bot.send_message(
             chat_id=order['user_id'], 
-            text=f"🎉 *ЗАКАЗ ВЫПОЛНЕН!*\n\n🆔 Заказ #{order_id}\n📦 {order['reviews_count']} отзывов накручено!\n\nСпасибо, что воспользовались нашим сервисом!",
+            text=f"🎉 *ЗАКАЗ ВЫПОЛНЕН!*\n\n🆔 Заказ #{order_id}\n📦 {order['reviews_count']} отзывов накручено!\n\nСпасибо, что воспользовались нашим сервисом! Оставьте пожалуйста отзыв, отправив его @fanpay_agent",
             parse_mode='Markdown'
         )
         await query.edit_message_text(f"🎉 Заказ #{order_id} выполнен!")
