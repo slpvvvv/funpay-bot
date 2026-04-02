@@ -276,14 +276,14 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     register_user(user_id, username)
     
     await update.message.reply_text(
-        f"*Добро пожаловать!*\n\n"
-        f"💰 Цена: *{PRICE_PER_REVIEW_RUB}₽* за отзыв\n"
-        f"💎 Stars: *{STARS_PER_REVIEW}⭐*\n"
-        f"🪙 TON: *{TON_PER_REVIEW}*\n\n"
-        f"📋 Условие: на профиле должно быть *{MIN_OFFERS}* объявлений по *{MIN_OFFER_PRICE}₽*\n\n"
+        f"Добро пожаловать!\n\n"
+        f"💰 Цена: {PRICE_PER_REVIEW_RUB}₽ за отзыв\n"
+        f"💎 Stars: {STARS_PER_REVIEW}⭐\n"
+        f"🪙 TON: {TON_PER_REVIEW}\n\n"
+        f"📋 Условие: на профиле должно быть {MIN_OFFERS} объявлений по {MIN_OFFER_PRICE}₽\n\n"
         f"⭐ Отзывы: {REVIEWS_CHANNEL}\n"
         f"📞 Поддержка: {SUPPORT_CONTACT}",
-        parse_mode='Markdown', reply_markup=get_main_keyboard()
+        reply_markup=get_main_keyboard()
     )
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -984,8 +984,7 @@ async def check_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     args = context.args
     if not args:
         await update.message.reply_text(
-            "*Использование:* `/check ID`\n\nПример: `/check a1b2c3d4`",
-            parse_mode='Markdown'
+            "Использование: /check ID\n\nПример: /check a1b2c3d4"
         )
         return
     
@@ -993,7 +992,7 @@ async def check_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     order = get_order(order_id)
     
     if not order:
-        await update.message.reply_text(f"Заказ `{order_id}` не найден", parse_mode='Markdown')
+        await update.message.reply_text(f"Заказ {order_id} не найден")
         return
     
     status_text = {
@@ -1004,7 +1003,7 @@ async def check_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     }.get(order['status'], '❓ Неизвестно')
     
     text = (
-        f"*Заказ #{order_id}*\n\n"
+        f"📋 Заказ {order_id}\n\n"
         f"👤 Пользователь: @{order['username']}\n"
         f"📦 Отзывы: {order['reviews_count']}\n"
         f"🔗 Ссылка: {order['funpay_link']}\n"
@@ -1012,32 +1011,32 @@ async def check_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"💎 Stars: {order['amount_stars']}⭐\n"
         f"🪙 TON: {order['amount_ton']}\n"
         f"📊 Статус: {status_text}\n"
-        f"📅 Создан: {order['created_at'][:19]}\n"
+        f"📅 Создан: {order['created_at'][:19]}"
     )
     
     if order['paid_at']:
-        text += f"✅ Оплачен: {order['paid_at'][:19]}\n"
+        text += f"\n✅ Оплачен: {order['paid_at'][:19]}"
     if order['completed_at']:
-        text += f"🎉 Выполнен: {order['completed_at'][:19]}\n"
+        text += f"\n🎉 Выполнен: {order['completed_at'][:19]}"
     if order['cancelled_at']:
-        text += f"❌ Отменен: {order['cancelled_at'][:19]}\nПричина: {order['cancel_reason']}"
+        text += f"\n❌ Отменен: {order['cancelled_at'][:19]}\nПричина: {order['cancel_reason']}"
     
-    # Кнопки управления статусом — РАБОТАЮТ!
+    # Кнопки управления статусом
     keyboard = []
     if order['status'] == 'pending':
         keyboard.append([InlineKeyboardButton("✅ Подтвердить", callback_data=f"approve_{order_id}")])
         keyboard.append([InlineKeyboardButton("❌ Нет объявлений", callback_data=f"reject_offers_{order_id}")])
         keyboard.append([InlineKeyboardButton("❌ Нет перевода", callback_data=f"reject_payment_{order_id}")])
+        keyboard.append([InlineKeyboardButton("🗑 Отменить", callback_data=f"cancel_{order_id}")])
     if order['status'] == 'paid':
         keyboard.append([InlineKeyboardButton("🎉 Выполнен", callback_data=f"complete_{order_id}")])
         keyboard.append([InlineKeyboardButton("💰 Вернуть", callback_data=f"refund_{order_id}")])
-    if order['status'] in ['pending', 'paid']:
         keyboard.append([InlineKeyboardButton("🗑 Отменить", callback_data=f"cancel_{order_id}")])
     
     if keyboard:
-        await update.message.reply_text(text, parse_mode='Markdown', reply_markup=InlineKeyboardMarkup(keyboard))
+        await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
     else:
-        await update.message.reply_text(text, parse_mode='Markdown')
+        await update.message.reply_text(text)
 
 # ========== FLASK И АВТО-ПИНГ ==========
 flask_app = Flask(__name__)
