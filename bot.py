@@ -19,7 +19,7 @@ from telegram.ext import (
 TELEGRAM_BOT_TOKEN = "8668091678:AAHYsrKBDYfekWfP1x-gLPD6pwAAvBLzrGA"
 ADMIN_ID = 6480073415
 SUPPORT_CONTACT = "@gortonn"
-REVIEWS_CHANNEL = "https://t.me/+RB3PaVVUH5U2OTE5"
+REVIEWS_CHANNEL = "https://t.me/+GtFmXCZuPE00NDIx"
 FUNPAY_LOT_URL = "https://funpay.com/lots/offer?id=66845478"
 FEEDBACK_CONTACT = "@fanpay_agent"
 SETTINGS_FILE = "settings.json"
