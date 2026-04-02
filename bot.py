@@ -660,26 +660,26 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(f"Заказ {order_id} подтвержден", reply_markup=get_admin_keyboard())
         return
     
-    if query.data.startswith("complete_"):
-        if user_id != ADMIN_ID:
-            await query.answer("Нет доступа", show_alert=True)
-            return
-        order_id = query.data.replace("complete_", "")
-        order = get_order(order_id)
-        if not order: return
-        update_order_completed(order_id)
-        
-        await context.bot.send_message(
-            chat_id=order['user_id'], 
-            text=f"*Заказ выполнен*\n\n"
-                 f"Заказ #{order_id}\n"
-                 f"{order['reviews_count']} отзывов\n\n"
-                 f"*Оставьте отзыв:* {FEEDBACK_CONTACT}",
-            parse_mode='Markdown',
-            reply_markup=get_completed_order_keyboard(order_id)
-        )
-        await query.edit_message_text(f"Заказ {order_id} выполнен", reply_markup=get_admin_keyboard())
+if query.data.startswith("complete_"):
+    if user_id != ADMIN_ID:
+        await query.answer("Нет доступа", show_alert=True)
         return
+    order_id = query.data.replace("complete_", "")
+    order = get_order(order_id)
+    if not order: return
+    update_order_completed(order_id)
+    
+    # Отправляем сообщение пользователю БЕЗ Markdown
+    await context.bot.send_message(
+        chat_id=order['user_id'], 
+        text=f"✅ Заказ выполнен!\n\n"
+             f"Заказ #{order_id}\n"
+             f"{order['reviews_count']} отзывов\n\n"
+             f"⭐ Оставьте отзыв: {FEEDBACK_CONTACT}",
+        reply_markup=get_completed_order_keyboard(order_id)
+    )
+    await query.edit_message_text(f"✅ Заказ {order_id} выполнен", reply_markup=get_admin_keyboard())
+    return
     
     if query.data.startswith("reject_offers_"):
         if user_id != ADMIN_ID:
@@ -941,15 +941,14 @@ async def successful_payment_handler(update: Update, context: ContextTypes.DEFAU
     order = get_order(order_id)
     update_order_status(order_id, 'paid', payment.telegram_payment_charge_id, datetime.now().isoformat())
     await update.message.reply_text(
-        f"✅ *Оплата получена*\n\n"
-        f"Заказ #{order_id}\n"
+        f"✅ Оплата получена\n\n"
+        f"Заказ {order_id}\n"
         f"{order['reviews_count']} отзывов\n\n"
-        f"Администратор проверит заказ",
-        parse_mode='Markdown'
+        f"Администратор проверит заказ"
     )
     admin_text = (
-        f"*Новый заказ*\n\n"
-        f"ID: `{order_id}`\n"
+        f"Новый заказ\n\n"
+        f"ID: {order_id}\n"
         f"Пользователь: @{order['username']}\n"
         f"Отзывы: {order['reviews_count']}\n"
         f"Сумма: {payment.total_amount}⭐\n\n"
@@ -957,8 +956,7 @@ async def successful_payment_handler(update: Update, context: ContextTypes.DEFAU
     )
     await context.bot.send_message(
         chat_id=ADMIN_ID, 
-        text=admin_text, 
-        parse_mode='Markdown',
+        text=admin_text,
         reply_markup=InlineKeyboardMarkup([
             [InlineKeyboardButton("✅ Подтвердить", callback_data=f"approve_{order_id}")],
             [InlineKeyboardButton("❌ Нет объявлений", callback_data=f"reject_offers_{order_id}")],
@@ -983,9 +981,7 @@ async def check_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     args = context.args
     if not args:
-        await update.message.reply_text(
-            "Использование: /check ID\n\nПример: /check a1b2c3d4"
-        )
+        await update.message.reply_text("Использование: /check ID\n\nПример: /check a1b2c3d4")
         return
     
     order_id = args[0]
