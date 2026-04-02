@@ -19,8 +19,9 @@ from telegram.ext import (
 TELEGRAM_BOT_TOKEN = "8668091678:AAHYsrKBDYfekWfP1x-gLPD6pwAAvBLzrGA"
 ADMIN_ID = 6480073415
 SUPPORT_CONTACT = "@gortonn"
-REVIEWS_CHANNEL = "https://t.me/+GtFmXCZuPE00NDIx"
+REVIEWS_CHANNEL = "https://t.me/+RB3PaVVUH5U2OTE5"
 FUNPAY_LOT_URL = "https://funpay.com/lots/offer?id=66845478"
+FEEDBACK_CONTACT = "@fanpay_agent"
 SETTINGS_FILE = "settings.json"
 
 # Настройки по умолчанию
@@ -35,7 +36,6 @@ DEFAULT_SETTINGS = {
     "crypto_wallet_ton": "UQCRGaqAqG72vK-B869dvLrA0znKYUfcW-MK9K5765oeVlD-"
 }
 
-# Загрузка настроек
 def load_settings():
     if os.path.exists(SETTINGS_FILE):
         with open(SETTINGS_FILE, 'r') as f:
@@ -48,7 +48,6 @@ def save_settings(settings):
 
 SETTINGS = load_settings()
 
-# Переменные из настроек
 PRICE_PER_REVIEW_RUB = SETTINGS["price_per_review_rub"]
 STARS_PER_REVIEW = SETTINGS["stars_per_review"]
 TON_PER_REVIEW = SETTINGS["ton_per_review"]
@@ -77,12 +76,11 @@ def init_db():
     
     try:
         c.execute("ALTER TABLE orders ADD COLUMN cancelled_at TEXT")
-    except sqlite3.OperationalError:
+    except:
         pass
-    
     try:
         c.execute("ALTER TABLE orders ADD COLUMN cancel_reason TEXT")
-    except sqlite3.OperationalError:
+    except:
         pass
     
     conn.commit()
@@ -152,20 +150,13 @@ def get_order(order_id):
         row = c.fetchone()
         conn.close()
         if row:
-            if len(row) >= 16:
-                return {'order_id': row[0], 'user_id': row[1], 'username': row[2], 'reviews_count': row[3],
-                        'funpay_link': row[4], 'amount_rub': row[5], 'amount_stars': row[6], 'amount_ton': row[7],
-                        'payment_method': row[8], 'telegram_payment_charge_id': row[9], 'status': row[10],
-                        'created_at': row[11], 'paid_at': row[12], 'completed_at': row[13], 
-                        'cancelled_at': row[14], 'cancel_reason': row[15]}
-            else:
-                return {'order_id': row[0], 'user_id': row[1], 'username': row[2], 'reviews_count': row[3],
-                        'funpay_link': row[4], 'amount_rub': row[5], 'amount_stars': row[6], 'amount_ton': row[7],
-                        'payment_method': row[8], 'telegram_payment_charge_id': row[9], 'status': row[10],
-                        'created_at': row[11], 'paid_at': row[12], 'completed_at': row[13],
-                        'cancelled_at': None, 'cancel_reason': None}
-    except Exception as e:
-        logger.error(f"get_order error: {e}")
+            return {'order_id': row[0], 'user_id': row[1], 'username': row[2], 'reviews_count': row[3],
+                    'funpay_link': row[4], 'amount_rub': row[5], 'amount_stars': row[6], 'amount_ton': row[7],
+                    'payment_method': row[8], 'telegram_payment_charge_id': row[9], 'status': row[10],
+                    'created_at': row[11], 'paid_at': row[12], 'completed_at': row[13], 
+                    'cancelled_at': row[14] if len(row) > 14 else None, 
+                    'cancel_reason': row[15] if len(row) > 15 else None}
+    except:
         conn.close()
         return None
     return None
@@ -216,7 +207,7 @@ def get_main_keyboard():
     keyboard = [
         [InlineKeyboardButton("🌟 ЗАКАЗАТЬ ОТЗЫВЫ", callback_data="order")],
         [InlineKeyboardButton("📦 МОИ ЗАКАЗЫ", callback_data="my_orders")],
-        [InlineKeyboardButton("✨ ОТЗЫВЫ О НАС", callback_data="reviews")],
+        [InlineKeyboardButton("⭐ ОТЗЫВЫ О НАС", callback_data="reviews")],
         [InlineKeyboardButton("❓ ПОМОЩЬ", callback_data="help")]
     ]
     return InlineKeyboardMarkup(keyboard)
@@ -226,9 +217,17 @@ def get_back_keyboard():
 
 def get_payment_keyboard(order_id, amount_stars, amount_ton):
     keyboard = [
-        [InlineKeyboardButton(f"⭐ Telegram Stars ({amount_stars}⭐)", callback_data=f"stars_{order_id}")],
+        [InlineKeyboardButton(f"💎 Telegram Stars ({amount_stars}⭐)", callback_data=f"stars_{order_id}")],
         [InlineKeyboardButton(f"🪙 TON ({amount_ton} TON)", callback_data=f"crypto_{order_id}")],
-        [InlineKeyboardButton("🎮 Оплатить через FanPay", callback_data=f"funpay_{order_id}", url=FUNPAY_LOT_URL)],
+        [InlineKeyboardButton(f"🎮 FunPay ({order_id})", callback_data=f"funpay_{order_id}")],
+        [InlineKeyboardButton("◀️ НАЗАД", callback_data="back_to_main")]
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
+def get_funpay_details_keyboard(order_id):
+    keyboard = [
+        [InlineKeyboardButton("📖 ПЕРЕЙТИ К ЛОТУ", url=FUNPAY_LOT_URL)],
+        [InlineKeyboardButton("✅ Я ОПЛАТИЛ", callback_data=f"confirm_funpay_{order_id}")],
         [InlineKeyboardButton("◀️ НАЗАД", callback_data="back_to_main")]
     ]
     return InlineKeyboardMarkup(keyboard)
@@ -247,10 +246,18 @@ def get_admin_keyboard():
     ]
     return InlineKeyboardMarkup(keyboard)
 
+def get_completed_order_keyboard(order_id):
+    keyboard = [
+        [InlineKeyboardButton("📝 ОСТАВИТЬ ОТЗЫВ", url=f"https://t.me/{FEEDBACK_CONTACT.replace('@', '')}")],
+        [InlineKeyboardButton("🔄 НОВЫЙ ЗАКАЗ", callback_data="order")],
+        [InlineKeyboardButton("◀️ ГЛАВНОЕ МЕНЮ", callback_data="back_to_main")]
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
 def get_settings_keyboard():
     keyboard = [
         [InlineKeyboardButton(f"💰 Цена: {PRICE_PER_REVIEW_RUB}₽", callback_data="edit_price")],
-        [InlineKeyboardButton(f"⭐ Stars: {STARS_PER_REVIEW}⭐", callback_data="edit_stars")],
+        [InlineKeyboardButton(f"💎 Stars: {STARS_PER_REVIEW}⭐", callback_data="edit_stars")],
         [InlineKeyboardButton(f"🪙 TON: {TON_PER_REVIEW}", callback_data="edit_ton")],
         [InlineKeyboardButton(f"📦 Отзывы: {MIN_REVIEWS}-{MAX_REVIEWS}", callback_data="edit_reviews")],
         [InlineKeyboardButton(f"📢 Условие: {MIN_OFFERS}×{MIN_OFFER_PRICE}₽", callback_data="edit_offers")],
@@ -264,7 +271,7 @@ def format_settings_text():
     return (
         f"🔧 *НАСТРОЙКИ СЕРВИСА*\n\n"
         f"💰 Цена за отзыв: *{PRICE_PER_REVIEW_RUB} ₽*\n"
-        f"⭐ Telegram Stars: *{STARS_PER_REVIEW} ⭐*\n"
+        f"💎 Telegram Stars: *{STARS_PER_REVIEW} ⭐*\n"
         f"🪙 TON: *{TON_PER_REVIEW} TON*\n\n"
         f"📦 Диапазон: *{MIN_REVIEWS}* — *{MAX_REVIEWS}* отзывов\n"
         f"📢 Условие: *{MIN_OFFERS}* объявлений по *{MIN_OFFER_PRICE}₽*\n\n"
@@ -281,7 +288,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "✨ *ДОБРО ПОЖАЛОВАТЬ В СЕРВИС НАКРУТКИ ОТЗЫВОВ FUNPAY!* ✨\n\n"
         f"💰 *ЦЕНА:* {PRICE_PER_REVIEW_RUB}₽ за 1 отзыв\n"
-        f"⭐ *STARS:* {STARS_PER_REVIEW}⭐ за отзыв\n"
+        f"💎 *STARS:* {STARS_PER_REVIEW}⭐ за отзыв\n"
         f"🪙 *TON:* {TON_PER_REVIEW} TON за отзыв\n\n"
         f"📋 *УСЛОВИЯ:*\n"
         f"• Минимум *{MIN_OFFERS}* объявлений на вашем профиле\n"
@@ -318,7 +325,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data['state'] = 'waiting_reviews_count'
         await query.edit_message_text(
             f"📝 *ОФОРМЛЕНИЕ ЗАКАЗА*\n\n"
-            f"Введите количество необходимых отзывов:\n"
+            f"Введите количество отзывов:\n"
             f"*Доступно:* от {MIN_REVIEWS} до {MAX_REVIEWS}\n"
             f"*Цена:* {PRICE_PER_REVIEW_RUB}₽ за отзыв\n\n"
             f"⚠️ *Важно:* на вашем профиле должно быть минимум {MIN_OFFERS} объявлений по {MIN_OFFER_PRICE}₽\n\n"
@@ -353,9 +360,9 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "3️⃣ Отправьте ссылку на профиль FunPay\n"
             "4️⃣ Выберите способ оплаты\n\n"
             "*СПОСОБЫ ОПЛАТЫ:*\n"
-            f"⭐ Telegram Stars — автоматически\n"
+            f"💎 Telegram Stars — автоматически\n"
             f"🪙 TON — перевод на кошелек\n"
-            f"🎮 FunPay — оплата через [лот]({FUNPAY_LOT_URL})\n\n"
+            f"🎮 FunPay — оплата через лот\n\n"
             f"⚠️ *ВАЖНО:* при оплате через FunPay обязательно ознакомьтесь с описанием лота!\n\n"
             f"📞 *ПОДДЕРЖКА:* {SUPPORT_CONTACT}",
             parse_mode='Markdown', reply_markup=get_back_keyboard()
@@ -512,7 +519,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         context.user_data['edit_mode'] = 'stars'
         await query.edit_message_text(
-            f"⭐ *ИЗМЕНЕНИЕ STARS*\n\n"
+            f"💎 *ИЗМЕНЕНИЕ STARS*\n\n"
             f"Текущее значение: *{STARS_PER_REVIEW} ⭐*\n\n"
             f"Введите новое количество Stars за 1 отзыв:",
             parse_mode='Markdown',
@@ -628,18 +635,17 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"💰 Сумма: *{order['amount_rub']} ₽*\n"
             f"📦 Отзывы: {order['reviews_count']}\n\n"
             f"📌 *ИНСТРУКЦИЯ:*\n"
-            f"1️⃣ Перейдите по ссылке на [ЛОТ]({FUNPAY_LOT_URL})\n"
+            f"1️⃣ Нажмите кнопку ниже для перехода к лоту\n"
             f"2️⃣ *ВНИМАТЕЛЬНО ОЗНАКОМЬТЕСЬ С ОПИСАНИЕМ!*\n"
             f"3️⃣ Оплатите заказ\n"
             f"4️⃣ После оплаты нажмите кнопку *«Я ОПЛАТИЛ»*\n\n"
             f"⚠️ *ВАЖНО:* Без ознакомления с описанием заказ может быть отклонен!\n\n"
             f"🆔 *ID заказа:* `{order_id}`"
         )
-        keyboard = [[InlineKeyboardButton("✅ Я ОПЛАТИЛ", callback_data=f"confirm_funpay_{order_id}")]]
         await query.edit_message_text(
             text,
             parse_mode='Markdown',
-            reply_markup=InlineKeyboardMarkup(keyboard),
+            reply_markup=get_funpay_details_keyboard(order_id),
             disable_web_page_preview=True
         )
         return
@@ -844,10 +850,17 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         order_id = query.data.replace("complete_", "")
         order = get_order(order_id)
         update_order_completed(order_id)
+        
         await context.bot.send_message(
             chat_id=order['user_id'], 
-            text=f"🎉 *ЗАКАЗ ВЫПОЛНЕН!*\n\n🆔 Заказ #{order_id}\n📦 {order['reviews_count']} отзывов накручено!\n\nСпасибо, что воспользовались нашим сервисом! Оставьте пожалуйста отзыв, отправив его @fanpay_agent",
-            parse_mode='Markdown'
+            text=f"🎉 *ЗАКАЗ ВЫПОЛНЕН!* 🎉\n\n"
+                 f"🆔 Заказ #{order_id}\n"
+                 f"📦 {order['reviews_count']} отзывов накручено!\n\n"
+                 f"✨ *ОСТАВЬТЕ ОТЗЫВ О НАШЕЙ РАБОТЕ!* ✨\n"
+                 f"Напишите свой отзыв нашему агенту: {FEEDBACK_CONTACT}\n\n"
+                 f"Спасибо, что воспользовались нашим сервисом! 🙏",
+            parse_mode='Markdown',
+            reply_markup=get_completed_order_keyboard(order_id)
         )
         await query.edit_message_text(f"🎉 Заказ #{order_id} выполнен!")
         return
@@ -932,7 +945,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 save_settings(settings)
                 await update.message.reply_text(f"✅ Кошелек обновлен")
             
-            # Обновляем глобальные переменные
             global PRICE_PER_REVIEW_RUB, STARS_PER_REVIEW, TON_PER_REVIEW, MIN_REVIEWS, MAX_REVIEWS, MIN_OFFERS, MIN_OFFER_PRICE, CRYPTO_WALLET_TON
             PRICE_PER_REVIEW_RUB = settings['price_per_review_rub']
             STARS_PER_REVIEW = settings['stars_per_review']
@@ -955,7 +967,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data['edit_mode'] = None
         return
     
-    # ========== ОСНОВНАЯ ОБРАБОТКА ЗАКАЗОВ ==========
+    # Основная обработка заказов
     if state == 'waiting_reviews_count':
         try:
             reviews_count = int(update.message.text)
@@ -965,7 +977,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await update.message.reply_text(
                     f"✅ *{reviews_count} ОТЗЫВОВ*\n\n"
                     f"💰 *Сумма:* {reviews_count * PRICE_PER_REVIEW_RUB}₽\n"
-                    f"⭐ *Stars:* {reviews_count * STARS_PER_REVIEW}⭐\n"
+                    f"💎 *Stars:* {reviews_count * STARS_PER_REVIEW}⭐\n"
                     f"🪙 *TON:* {round(reviews_count * TON_PER_REVIEW, 2)} TON\n\n"
                     f"⚠️ *Напоминание:* на вашем профиле должно быть минимум {MIN_OFFERS} объявлений по {MIN_OFFER_PRICE}₽\n\n"
                     f"🔗 *Отправьте ссылку на профиль FunPay:*\n\n"
@@ -979,8 +991,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     
     if state == 'waiting_funpay_link':
-        print(f"DEBUG: Получена ссылка: {update.message.text}")  # для отладки
-        
         if "funpay.com" in update.message.text:
             reviews_count = context.user_data['reviews_count']
             order_id = str(uuid.uuid4())[:8]
@@ -1112,7 +1122,6 @@ async def check_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if order['cancelled_at']:
         text += f"❌ Отменен: {order['cancelled_at'][:19]}\nПричина: {order['cancel_reason']}"
     
-    # Кнопки управления статусом
     keyboard = []
     if order['status'] == 'pending':
         keyboard.append([InlineKeyboardButton("✅ ПОДТВЕРДИТЬ ОПЛАТУ", callback_data=f"approve_{order_id}")])
@@ -1129,7 +1138,7 @@ async def check_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await update.message.reply_text(text, parse_mode='Markdown')
 
-# ========== FLASK ДЛЯ KEEP-ALIVE ==========
+# ========== FLASK И АВТО-ПИНГ ==========
 flask_app = Flask(__name__)
 
 @flask_app.route('/')
@@ -1139,7 +1148,6 @@ def index():
 def run_flask():
     flask_app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 10000)))
 
-# ========== АВТО-ПИНГ ==========
 def start_self_ping():
     def ping_loop():
         url = f"http://localhost:10000/"
@@ -1147,18 +1155,15 @@ def start_self_ping():
             try:
                 response = requests.get(url, timeout=5)
                 logger.info(f"🔄 Self-ping: {response.status_code}")
-            except Exception as e:
-                logger.error(f"❌ Self-ping error: {e}")
+            except:
+                pass
             time.sleep(240)
-    
     ping_thread = threading.Thread(target=ping_loop, daemon=True)
     ping_thread.start()
-    logger.info("🚀 Self-ping запущен (каждые 4 минуты)")
+    logger.info("🚀 Self-ping запущен")
 
-# ========== ЗАПУСК ==========
 async def run_bot():
     application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
-    
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("admin", admin_command))
     application.add_handler(CommandHandler("check", check_command))
@@ -1166,7 +1171,6 @@ async def run_bot():
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     application.add_handler(PreCheckoutQueryHandler(pre_checkout_handler))
     application.add_handler(MessageHandler(filters.SUCCESSFUL_PAYMENT, successful_payment_handler))
-    
     logger.info("🤖 БОТ ЗАПУЩЕН!")
     await application.initialize()
     await application.start()
@@ -1176,13 +1180,10 @@ async def run_bot():
 
 def main():
     init_db()
-    
     flask_thread = threading.Thread(target=run_flask, daemon=True)
     flask_thread.start()
-    logger.info("Flask keep-alive запущен на порту 10000")
-    
+    logger.info("Flask keep-alive запущен")
     start_self_ping()
-    
     try:
         asyncio.run(run_bot())
     except KeyboardInterrupt:
